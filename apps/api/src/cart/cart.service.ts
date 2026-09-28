@@ -55,9 +55,9 @@ export class CartService {
           : line.quantity > available
             ? "QUANTITY_UNAVAILABLE"
             : undefined;
-      const price = line.product.price.toNumber();
-      const previousPrice = line.unitPriceSnapshot.toNumber();
-      const priceChanged = !line.unitPriceSnapshot.equals(line.product.price);
+      const price = line.product.price;
+      const previousPrice = line.unitPriceSnapshot;
+      const priceChanged = line.unitPriceSnapshot !== line.product.price;
       const item = {
         id: line.id,
         product: {

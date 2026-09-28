@@ -120,13 +120,13 @@ export class ShipmentsService {
         (sum, item) => sum + item.product.weightGrams * item.quantity,
         0,
       ),
-      amountMinor: Math.round(order.orderTotal.toNumber() * 100),
+      amountMinor: Math.round(order.orderTotal * 100),
       cod: order.masterOrder.paymentMethod === "COD",
       items: order.items.map((item) => ({
         name: item.productName,
         sku: item.sku ?? item.productId,
         quantity: item.quantity,
-        unitPriceMinor: Math.round(item.unitPrice.toNumber() * 100),
+        unitPriceMinor: Math.round(item.unitPrice * 100),
       })),
     };
     const result = await this.shipping.createShipment(input);

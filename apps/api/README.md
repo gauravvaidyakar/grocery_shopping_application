@@ -1,13 +1,13 @@
 # Vishwaneed API
 
-NestJS modular-monolith API for Vishwaneed. PostgreSQL is the system of record and Prisma owns the relational schema and migrations.
+NestJS modular-monolith API for Vishwaneed. MongoDB is the system of record and Prisma owns the application schema and indexes.
 
 ## Local setup
 
-1. Install PostgreSQL 15 or newer and create an empty `vishwaneed` database.
-2. Copy `.env.example` to `.env` and replace every secret/example credential.
+1. Create a MongoDB Atlas deployment (or a local replica set) and database named `grocery_web_application`.
+2. Copy `.env.example` to `.env`, set its MongoDB `DATABASE_URL`, and replace every secret/example credential.
 3. Run `npm run prisma:generate --workspace @vishwaneed/api`.
-4. Run `npm run prisma:migrate --workspace @vishwaneed/api`.
+4. Run `npm run prisma:deploy --workspace @vishwaneed/api`.
 5. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD`, then run `npm run prisma:seed --workspace @vishwaneed/api`.
 6. Run `npm run dev:api` from the repository root.
 

@@ -44,10 +44,14 @@ const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 };
 
 export function calculateCommissionAmount(
-  baseAmount: Prisma.Decimal,
-  percentage: Prisma.Decimal,
-): Prisma.Decimal {
-  return baseAmount.mul(percentage).div(100).toDecimalPlaces(2);
+  baseAmount: number,
+  percentage: number,
+): number {
+  return new Prisma.Decimal(baseAmount)
+    .mul(percentage)
+    .div(100)
+    .toDecimalPlaces(2)
+    .toNumber();
 }
 
 type CancelableOrderItem = Prisma.OrderItemGetPayload<{
@@ -155,7 +159,7 @@ export class OrdersService {
                 `${item.productName} has no inventory`,
               );
             if (
-              product.price.mul(100).toDecimalPlaces(0).toNumber() !==
+              Math.round(product.price * 100) !==
               item.unitPriceMinor
             )
               throw new BadRequestException(
@@ -208,18 +212,15 @@ export class OrdersService {
               masterOrderId: masterOrder.id,
               vendorId: vendorGroup.vendorId,
               status: initialStatus,
-              productSubtotal: new Prisma.Decimal(
-                vendorGroup.productSubtotalMinor,
-              ).div(100),
-              shippingAmount: new Prisma.Decimal(vendorGroup.shippingMinor).div(
+              productSubtotal: vendorGroup.productSubtotalMinor / 100,
+              shippingAmount: vendorGroup.shippingMinor / 100,
+              orderTotal:
+                (vendorGroup.productSubtotalMinor +
+                  vendorGroup.shippingMinor) /
                 100,
-              ),
-              orderTotal: new Prisma.Decimal(
-                vendorGroup.productSubtotalMinor + vendorGroup.shippingMinor,
-              ).div(100),
             },
           });
-          let commissionTotal = new Prisma.Decimal(0);
+          let commissionTotal = 0;
           for (const item of vendorGroup.items) {
             const product = productMap.get(item.productId)!;
             const inventory = product.inventory!;
@@ -231,7 +232,7 @@ export class OrdersService {
                 quantity: item.quantity,
                 unitPrice: product.price,
                 gstRate: product.gstRate,
-                lineTotal: new Prisma.Decimal(item.lineTotalMinor).div(100),
+                lineTotal: item.lineTotalMinor / 100,
                 productType: product.productType,
                 status: initialStatus,
                 cancellable: true,
@@ -263,7 +264,7 @@ export class OrdersService {
               orderItem.lineTotal,
               rule.percentage,
             );
-            commissionTotal = commissionTotal.add(commissionAmount);
+            commissionTotal += commissionAmount;
             await tx.commissionTransaction.create({
               data: {
                 vendorId: vendorOrder.vendorId,
@@ -279,11 +280,8 @@ export class OrdersService {
           await tx.vendorOrder.update({
             where: { id: vendorOrder.id },
             data: {
-              settlementAmount: new Prisma.Decimal(
-                vendorGroup.productSubtotalMinor,
-              )
-                .div(100)
-                .sub(commissionTotal),
+              settlementAmount:
+                vendorGroup.productSubtotalMinor / 100 - commissionTotal,
             },
           });
         }
@@ -319,10 +317,7 @@ export class OrdersService {
           include: CUSTOMER_ORDER_INCLUDE,
         });
       },
-      {
-        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
-        timeout: 15_000,
-      },
+      { timeout: 15_000 },
     );
     await this.notifications.notifyOrderPlaced(order.id).catch(() => undefined);
     return this.presentCustomerOrder(order);
@@ -487,8 +482,8 @@ export class OrdersService {
   }
 
   private presentCustomerOrder(order: CustomerOrderRecord) {
-    const money = (amount: Prisma.Decimal) => ({
-      amount: amount.toNumber(),
+    const money = (amount: number) => ({
+      amount,
       currency: order.currency,
     });
     const payment = order.payments[0];

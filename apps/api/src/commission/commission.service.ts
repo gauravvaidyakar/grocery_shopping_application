@@ -1,5 +1,4 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
 import { PrismaService } from "../database/prisma.service";
 import { VendorsService } from "../vendors/vendors.service";
 import type { CommissionRuleDto } from "./commission.dto";
@@ -22,7 +21,7 @@ export class CommissionService {
       data: {
         categoryId: input.categoryId,
         productType: input.productType,
-        percentage: new Prisma.Decimal(input.percentage),
+        percentage: input.percentage,
         effectiveFrom: new Date(input.effectiveFrom),
         effectiveTo: input.effectiveTo
           ? new Date(input.effectiveTo)

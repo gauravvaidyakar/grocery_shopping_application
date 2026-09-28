@@ -105,14 +105,11 @@ export class CheckoutService {
       const available = product.inventory.quantity - product.inventory.reserved;
       if (available < line.quantity)
         throw new ConflictException(`${product.name} has insufficient stock`);
-      if (!line.unitPriceSnapshot.equals(product.price))
+      if (Number(line.unitPriceSnapshot) !== Number(product.price))
         throw new ConflictException(
           `${product.name} price changed; update the cart to accept the current price`,
         );
-      const unitPriceMinor = product.price
-        .mul(100)
-        .toDecimalPlaces(0)
-        .toNumber();
+      const unitPriceMinor = Math.round(product.price * 100);
       const item: QuoteItemSnapshot = {
         cartItemId: line.id,
         productId: product.id,
@@ -197,9 +194,9 @@ export class CheckoutService {
       data: {
         customerId: customer.id,
         addressId,
-        productSubtotal: new Prisma.Decimal(productSubtotalMinor).div(100),
-        totalShipping: new Prisma.Decimal(totalShippingMinor).div(100),
-        payableTotal: new Prisma.Decimal(snapshot.payableTotalMinor).div(100),
+        productSubtotal: productSubtotalMinor / 100,
+        totalShipping: totalShippingMinor / 100,
+        payableTotal: snapshot.payableTotalMinor / 100,
         snapshot: snapshot as unknown as Prisma.InputJsonValue,
         expiresAt,
       },

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { Prisma, RefundMethod, RefundStatus } from "@prisma/client";
+import { RefundMethod, RefundStatus } from "@prisma/client";
 import { PrismaService } from "../database/prisma.service";
 import { RazorpayPaymentProvider } from "../payments/payment-provider";
 import { completeRefundFinancials } from "./refund-engine";
@@ -60,10 +60,10 @@ export class RefundsService {
     }
     const providerRefund = await this.provider.createRefund({
       providerPaymentId: refund.payment.providerPaymentId,
-      amountMinor: Math.round(refund.amount.toNumber() * 100),
+      amountMinor: Math.round(refund.amount * 100),
       idempotencyKey: refund.idempotencyKey,
     });
-    if (providerRefund.amount !== Math.round(refund.amount.toNumber() * 100)) {
+    if (providerRefund.amount !== Math.round(refund.amount * 100)) {
       throw new BadRequestException("Provider refund amount mismatch");
     }
     const pending = await this.prisma.refund.update({
@@ -95,7 +95,7 @@ export class RefundsService {
       async (tx) => {
         return completeRefundFinancials(tx, id, providerReference);
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      { timeout: 15_000 },
     );
     void this.notifications.notifyRefundStatus(completed.id);
     return completed;

@@ -403,7 +403,7 @@ Admin-only:
 - `DELETE /admin/home-hero-slides/:id/image`
 
 The API accepts JPG, JPEG, PNG and WEBP uploads up to 5 MB, normalizes them to
-WEBP and stores them persistently in PostgreSQL. CTA destinations must be
+WEBP and stores them persistently in MongoDB. CTA destinations must be
 internal application paths. Public responses never include stored image bytes.
 
 ---

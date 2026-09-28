@@ -4,7 +4,7 @@ Responsive React and TypeScript vendor workspace integrated with the NestJS API.
 
 ## Run locally
 
-1. Start PostgreSQL and the API.
+1. Configure MongoDB and start the API.
 2. Copy `.env.example` to `.env` if the API is not available through the same origin.
 3. From the repository root run `npm run dev:vendor`.
 4. Open `http://localhost:5174`.

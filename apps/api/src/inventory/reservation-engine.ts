@@ -101,14 +101,14 @@ export async function finalizeMasterOrder(
           },
         });
       }
-      const commissionAmount = item.commission?.amount ?? new Prisma.Decimal(0);
+      const commissionAmount = item.commission?.amount ?? 0;
       let balance =
         (
           await tx.vendorLedger.findFirst({
             where: { vendorId: vendorOrder.vendorId },
             orderBy: { createdAt: "desc" },
           })
-        )?.balanceAfter ?? new Prisma.Decimal(0);
+        )?.balanceAfter ?? 0;
       const earningExists = await tx.vendorLedger.findFirst({
         where: {
           vendorId: vendorOrder.vendorId,
@@ -118,7 +118,7 @@ export async function finalizeMasterOrder(
         },
       });
       if (!earningExists) {
-        balance = balance.add(item.lineTotal);
+        balance += item.lineTotal;
         await tx.vendorLedger.create({
           data: {
             vendorId: vendorOrder.vendorId,
@@ -141,8 +141,8 @@ export async function finalizeMasterOrder(
           referenceId: item.id,
         },
       });
-      if (!commissionExists && commissionAmount.gt(0)) {
-        balance = balance.sub(commissionAmount);
+      if (!commissionExists && commissionAmount > 0) {
+        balance -= commissionAmount;
         await tx.vendorLedger.create({
           data: {
             vendorId: vendorOrder.vendorId,
@@ -159,13 +159,13 @@ export async function finalizeMasterOrder(
       }
     }
     const commissionTotal = vendorOrder.items.reduce(
-      (sum, item) => sum.add(item.commission?.amount ?? 0),
-      new Prisma.Decimal(0),
+      (sum, item) => sum + (item.commission?.amount ?? 0),
+      0,
     );
     await tx.vendorOrder.update({
       where: { id: vendorOrder.id },
       data: {
-        settlementAmount: vendorOrder.productSubtotal.sub(commissionTotal),
+        settlementAmount: vendorOrder.productSubtotal - commissionTotal,
       },
     });
   }

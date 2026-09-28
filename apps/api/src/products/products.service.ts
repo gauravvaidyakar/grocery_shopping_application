@@ -190,22 +190,22 @@ export class ProductsService {
       tx.product.create({
         data: {
           ...data,
-          price: new Prisma.Decimal(input.price),
+          price: input.price,
           mrp:
-            input.mrp === undefined ? undefined : new Prisma.Decimal(input.mrp),
-          gstRate: new Prisma.Decimal(input.gstRate),
+            input.mrp === undefined ? undefined : input.mrp,
+          gstRate: input.gstRate,
           lengthCm:
             input.lengthCm === undefined
               ? undefined
-              : new Prisma.Decimal(input.lengthCm),
+              : input.lengthCm,
           widthCm:
             input.widthCm === undefined
               ? undefined
-              : new Prisma.Decimal(input.widthCm),
+              : input.widthCm,
           heightCm:
             input.heightCm === undefined
               ? undefined
-              : new Prisma.Decimal(input.heightCm),
+              : input.heightCm,
           specifications: specifications,
           slug,
           vendorId: vendor.id,
@@ -319,18 +319,18 @@ export class ProductsService {
         rating: vendorRating,
         productCount: product.vendor._count.products,
       },
-      price: { amount: product.price.toNumber(), currency: "INR" },
+      price: { amount: product.price, currency: "INR" },
       mrp: product.mrp
-        ? { amount: product.mrp.toNumber(), currency: "INR" }
+        ? { amount: product.mrp, currency: "INR" }
         : undefined,
       gstInclusive: true,
       weight: `${product.weightGrams} g`,
       dimensions:
         product.lengthCm || product.widthCm || product.heightCm
           ? {
-              lengthCm: product.lengthCm?.toNumber(),
-              widthCm: product.widthCm?.toNumber(),
-              heightCm: product.heightCm?.toNumber(),
+              lengthCm: product.lengthCm,
+              widthCm: product.widthCm,
+              heightCm: product.heightCm,
             }
           : undefined,
       description: product.description,

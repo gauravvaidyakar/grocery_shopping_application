@@ -3,9 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "prestart:dev": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/start-local-db.ps1",
     "start:dev": "nest start --watch",
-    "prestart": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/start-local-db.ps1",
     "start": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/start-local-api.ps1",
     "build": "nest build",
     "typecheck": "tsc --noEmit",
@@ -14,7 +12,7 @@
     "test:watch": "vitest",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
-    "prisma:migrate": "prisma migrate deploy",
+    "prisma:deploy": "prisma db push --skip-generate",
     "prisma:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {

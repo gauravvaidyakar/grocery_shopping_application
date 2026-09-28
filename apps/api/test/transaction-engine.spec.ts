@@ -197,8 +197,8 @@ describe("commission calculation", () => {
   it("rounds the backend commission snapshot to paise", () => {
     expect(
       calculateCommissionAmount(
-        new Prisma.Decimal("999.99"),
-        new Prisma.Decimal("7.5"),
+        999.99,
+        7.5,
       ).toString(),
     ).toBe("75");
   });

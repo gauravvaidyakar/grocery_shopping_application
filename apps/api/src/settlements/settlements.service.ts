@@ -2,7 +2,6 @@ import { BadRequestException, Injectable } from "@nestjs/common";
 import {
   LedgerDirection,
   LedgerEntryType,
-  Prisma,
   RefundStatus,
   ReturnStatus,
   SettlementStatus,
@@ -68,19 +67,15 @@ export class SettlementsService {
         const created: string[] = [];
         for (const order of eligibleOrders) {
           const commissionAmount = order.commissions.reduce(
-            (sum, commission) => sum.add(commission.amount),
-            new Prisma.Decimal(0),
+            (sum, commission) => sum + commission.amount,
+            0,
           );
           const refundAmount = order.refunds
             .filter((refund) => refund.status === RefundStatus.COMPLETED)
-            .reduce(
-              (sum, refund) => sum.add(refund.amount),
-              new Prisma.Decimal(0),
-            );
-          const settlementAmount = order.productSubtotal
-            .sub(commissionAmount)
-            .sub(refundAmount);
-          if (settlementAmount.isNegative()) {
+            .reduce((sum, refund) => sum + refund.amount, 0);
+          const settlementAmount =
+            order.productSubtotal - commissionAmount - refundAmount;
+          if (settlementAmount < 0) {
             throw new BadRequestException(
               `Vendor order ${order.vendorOrderNumber} has a negative settlement`,
             );
@@ -113,7 +108,7 @@ export class SettlementsService {
         }
         return { eligible: created.length, settlementIds: created };
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      { timeout: 15_000 },
     );
   }
 
@@ -157,9 +152,7 @@ export class SettlementsService {
           where: { vendorId: settlement.vendorId },
           orderBy: { createdAt: "desc" },
         });
-        const balance = (last?.balanceAfter ?? new Prisma.Decimal(0)).sub(
-          settlement.amount,
-        );
+        const balance = (last?.balanceAfter ?? 0) - settlement.amount;
         await tx.vendorLedger.upsert({
           where: {
             vendorId_type_referenceType_referenceId: {
@@ -201,7 +194,7 @@ export class SettlementsService {
         });
         return updated;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      { timeout: 15_000 },
     );
   }
 }

@@ -502,7 +502,7 @@ describe("platform security rules", () => {
   it("requires independent strong JWT secrets and field encryption", () => {
     expect(() =>
       validateEnvironment({
-        DATABASE_URL: "postgresql://db",
+        DATABASE_URL: "mongodb://localhost:27017/grocery_web_application",
         JWT_ACCESS_SECRET: "short",
         JWT_REFRESH_SECRET: "short",
         BANK_DATA_ENCRYPTION_KEY: "bad",
@@ -515,7 +515,7 @@ describe("platform security rules", () => {
     expect(() =>
       validateEnvironment({
         NODE_ENV: "production",
-        DATABASE_URL: "postgresql://db",
+        DATABASE_URL: "mongodb://localhost:27017/grocery_web_application",
         JWT_ACCESS_SECRET: "a".repeat(32),
         JWT_REFRESH_SECRET: "b".repeat(32),
         BANK_DATA_ENCRYPTION_KEY: "c".repeat(64),

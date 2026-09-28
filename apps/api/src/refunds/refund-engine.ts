@@ -29,9 +29,7 @@ export async function completeRefundFinancials(
       where: { vendorId: refund.vendorOrder.vendorId },
       orderBy: { createdAt: "desc" },
     });
-    const balance = (last?.balanceAfter ?? new Prisma.Decimal(0)).sub(
-      refund.amount,
-    );
+    const balance = (last?.balanceAfter ?? 0) - refund.amount;
     await tx.vendorLedger.upsert({
       where: {
         vendorId_type_referenceType_referenceId: {
@@ -60,11 +58,11 @@ export async function completeRefundFinancials(
       where: { paymentId: refund.paymentId, status: RefundStatus.COMPLETED },
       _sum: { amount: true },
     });
-    const refunded = aggregate._sum.amount ?? new Prisma.Decimal(0);
+    const refunded = aggregate._sum.amount ?? 0;
     await tx.payment.update({
       where: { id: refund.paymentId },
       data: {
-        status: refunded.gte(refund.payment.amount)
+        status: refunded >= refund.payment.amount
           ? PaymentStatus.REFUNDED
           : PaymentStatus.PARTIALLY_REFUNDED,
       },

@@ -64,11 +64,11 @@ export class PaymentsService {
         existing.id,
         order.id,
         existing.providerOrderId,
-        existing.amount.toNumber(),
+        existing.amount,
         order.orderNumber,
       );
     }
-    const amountMinor = Math.round(order.payableTotal.toNumber() * 100);
+    const amountMinor = Math.round(order.payableTotal * 100);
     const providerOrder = await this.provider.createOrder({
       amountMinor,
       currency: order.currency,
@@ -98,7 +98,7 @@ export class PaymentsService {
       payment.id,
       order.id,
       providerOrder.id,
-      payment.amount.toNumber(),
+      payment.amount,
       order.orderNumber,
     );
   }
@@ -250,7 +250,7 @@ export class PaymentsService {
         });
         return updated;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      { timeout: 15_000 },
     );
     await this.notifications
       .notifyPaymentStatus(updated.masterOrderId, "PAID")
@@ -363,7 +363,7 @@ export class PaymentsService {
   private assertProviderPayment(
     payment: {
       providerOrderId: string | null;
-      amount: Prisma.Decimal;
+      amount: number;
       currency: string;
     },
     providerPayment: {
@@ -376,7 +376,7 @@ export class PaymentsService {
     if (
       providerPayment.status !== "captured" ||
       providerPayment.orderId !== payment.providerOrderId ||
-      providerPayment.amount !== Math.round(payment.amount.toNumber() * 100) ||
+      providerPayment.amount !== Math.round(payment.amount * 100) ||
       providerPayment.currency !== payment.currency
     ) {
       throw new BadRequestException(
@@ -440,7 +440,7 @@ export class PaymentsService {
     masterOrderId: string;
     provider: string;
     status: PaymentStatus;
-    amount: Prisma.Decimal;
+    amount: number;
     currency: string;
     failureReason: string | null;
     updatedAt: Date;
@@ -455,7 +455,7 @@ export class PaymentsService {
           ? "PAYMENT_PENDING"
           : payment.status,
       amount: {
-        amount: payment.amount.toNumber(),
+        amount: payment.amount,
         currency: payment.currency,
       },
       failureMessage: payment.failureReason ?? undefined,

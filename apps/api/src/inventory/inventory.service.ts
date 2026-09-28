@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
 import { PrismaService } from "../database/prisma.service";
 import { VendorsService } from "../vendors/vendors.service";
 
@@ -58,7 +57,7 @@ export class InventoryService {
         });
         return tx.inventory.findUniqueOrThrow({ where: { id: inventory.id } });
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      { timeout: 15_000 },
     );
   }
   async history(userId: string, productId: string) {

@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
@@ -227,7 +227,7 @@ enum VerificationOtpPurpose {
 }
 
 model User {
-  id                         String               @id @default(uuid()) @db.Uuid
+  id                         String               @id @default(uuid()) @map("_id")
   email                      String?              @unique
   mobile                     String?              @unique
   passwordHash               String
@@ -252,40 +252,40 @@ model User {
 }
 
 model VerificationOtp {
-  id         String    @id @default(uuid()) @db.Uuid
-  userId     String    @db.Uuid
+  id         String                 @id @default(uuid()) @map("_id")
+  userId     String
   codeHash   String
   purpose    VerificationOtpPurpose @default(ACCOUNT_VERIFICATION)
   expiresAt  DateTime
-  attempts   Int       @default(0)
+  attempts   Int                    @default(0)
   consumedAt DateTime?
-  createdAt  DateTime  @default(now())
-  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime               @default(now())
+  user       User                   @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([userId, purpose, expiresAt])
 }
 
 model PasswordResetToken {
-  id        String    @id @default(uuid()) @db.Uuid
-  userId    String    @db.Uuid
+  id        String    @id @default(uuid()) @map("_id")
+  userId    String
   tokenHash String    @unique
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([userId, expiresAt])
 }
 
 model CustomerProfile {
-  id             String          @id @default(uuid()) @db.Uuid
-  userId         String          @unique @db.Uuid
+  id             String          @id @default(uuid()) @map("_id")
+  userId         String          @unique
   firstName      String
   lastName       String
   marketingOptIn Boolean         @default(false)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   addresses      Address[]
   cart           Cart?
   orders         MasterOrder[]
@@ -298,8 +298,8 @@ model CustomerProfile {
 }
 
 model Vendor {
-  id                     String                  @id @default(uuid()) @db.Uuid
-  userId                 String                  @unique @db.Uuid
+  id                     String                  @id @default(uuid()) @map("_id")
+  userId                 String                  @unique
   businessName           String
   legalName              String?
   ownerName              String
@@ -317,7 +317,7 @@ model Vendor {
   suspendedAt            DateTime?
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
-  user                   User                    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user                   User                    @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   documents              VendorDocument[]
   inspections            VendorInspection[]
   bankAccounts           VendorBankAccount[]
@@ -334,8 +334,8 @@ model Vendor {
 }
 
 model VendorDocument {
-  id              String             @id @default(uuid()) @db.Uuid
-  vendorId        String             @db.Uuid
+  id              String             @id @default(uuid()) @map("_id")
+  vendorId        String
   type            VendorDocumentType
   originalName    String
   storageKey      String             @unique
@@ -345,21 +345,21 @@ model VendorDocument {
   expiresAt       DateTime?
   status          VerificationStatus @default(PENDING)
   rejectionReason String?
-  verifiedById    String?            @db.Uuid
+  verifiedById    String?
   verifiedAt      DateTime?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
-  vendor          Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  verifiedBy      User?              @relation("DocumentVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+  vendor          Vendor             @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  verifiedBy      User?              @relation("DocumentVerifier", fields: [verifiedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([vendorId, type])
   @@index([vendorId, status])
 }
 
 model VendorInspection {
-  id                String           @id @default(uuid()) @db.Uuid
-  vendorId          String           @db.Uuid
-  inspectorId       String           @db.Uuid
+  id                String           @id @default(uuid()) @map("_id")
+  vendorId          String
+  inspectorId       String
   scheduledAt       DateTime
   inspectedAt       DateTime?
   location          String
@@ -372,16 +372,16 @@ model VendorInspection {
   status            InspectionStatus @default(SCHEDULED)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
-  vendor            Vendor           @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  inspector         User             @relation("InspectionInspector", fields: [inspectorId], references: [id], onDelete: Restrict)
+  vendor            Vendor           @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  inspector         User             @relation("InspectionInspector", fields: [inspectorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([vendorId, status])
   @@index([inspectorId, scheduledAt])
 }
 
 model VendorBankAccount {
-  id                     String             @id @default(uuid()) @db.Uuid
-  vendorId               String             @db.Uuid
+  id                     String             @id @default(uuid()) @map("_id")
+  vendorId               String
   accountHolderName      String
   accountNumberEncrypted String
   accountNumberLast4     String
@@ -392,27 +392,27 @@ model VendorBankAccount {
   status                 VerificationStatus @default(PENDING)
   createdAt              DateTime           @default(now())
   updatedAt              DateTime           @updatedAt
-  vendor                 Vendor             @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor                 Vendor             @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([vendorId, isPrimary])
 }
 
 model VendorStatusHistory {
-  id         String        @id @default(uuid()) @db.Uuid
-  vendorId   String        @db.Uuid
+  id         String        @id @default(uuid()) @map("_id")
+  vendorId   String
   fromStatus VendorStatus?
   toStatus   VendorStatus
   reason     String?
-  actorId    String        @db.Uuid
+  actorId    String
   createdAt  DateTime      @default(now())
-  vendor     Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor     Vendor        @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([vendorId, createdAt])
 }
 
 model Category {
-  id              String           @id @default(uuid()) @db.Uuid
-  parentId        String?          @db.Uuid
+  id              String           @id @default(uuid()) @map("_id")
+  parentId        String?
   name            String
   slug            String           @unique
   description     String?
@@ -423,7 +423,7 @@ model Category {
   sortOrder       Int              @default(0)
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
-  parent          Category?        @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  parent          Category?        @relation("CategoryTree", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children        Category[]       @relation("CategoryTree")
   products        Product[]
   commissionRules CommissionRule[]
@@ -432,7 +432,7 @@ model Category {
 }
 
 model HomeHeroSlide {
-  id            String   @id @default(uuid()) @db.Uuid
+  id            String   @id @default(uuid()) @map("_id")
   eyebrow       String
   title         String
   description   String
@@ -451,20 +451,20 @@ model HomeHeroSlide {
 }
 
 model Product {
-  id              String         @id @default(uuid()) @db.Uuid
-  vendorId        String         @db.Uuid
-  categoryId      String         @db.Uuid
+  id              String         @id @default(uuid()) @map("_id")
+  vendorId        String
+  categoryId      String
   name            String
   slug            String         @unique
   description     String
   productType     ProductType
-  price           Decimal        @db.Decimal(12, 2)
-  mrp             Decimal?       @db.Decimal(12, 2)
-  gstRate         Decimal        @db.Decimal(5, 2)
+  price           Float
+  mrp             Float?
+  gstRate         Float
   weightGrams     Int
-  lengthCm        Decimal?       @db.Decimal(8, 2)
-  widthCm         Decimal?       @db.Decimal(8, 2)
-  heightCm        Decimal?       @db.Decimal(8, 2)
+  lengthCm        Float?
+  widthCm         Float?
+  heightCm        Float?
   ingredients     String?
   specifications  Json?
   status          ProductStatus  @default(DRAFT)
@@ -472,8 +472,8 @@ model Product {
   approvedAt      DateTime?
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
-  vendor          Vendor         @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  category        Category       @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  vendor          Vendor         @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  category        Category       @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   images          ProductImage[]
   inventory       Inventory?
   cartItems       CartItem[]
@@ -487,32 +487,32 @@ model Product {
 }
 
 model ProductImage {
-  id        String   @id @default(uuid()) @db.Uuid
-  productId String   @db.Uuid
+  id        String   @id @default(uuid()) @map("_id")
+  productId String
   url       String
   altText   String?
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([productId, sortOrder])
 }
 
 model Inventory {
-  id                String                 @id @default(uuid()) @db.Uuid
-  productId         String                 @unique @db.Uuid
+  id                String                 @id @default(uuid()) @map("_id")
+  productId         String                 @unique
   quantity          Int                    @default(0)
   reserved          Int                    @default(0)
   lowStockThreshold Int                    @default(5)
   version           Int                    @default(0)
   updatedAt         DateTime               @updatedAt
-  product           Product                @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product           Product                @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   transactions      InventoryTransaction[]
 }
 
 model InventoryTransaction {
-  id            String                   @id @default(uuid()) @db.Uuid
-  inventoryId   String                   @db.Uuid
+  id            String                   @id @default(uuid()) @map("_id")
+  inventoryId   String
   type          InventoryTransactionType
   quantity      Int
   balanceAfter  Int
@@ -520,7 +520,7 @@ model InventoryTransaction {
   referenceId   String?
   notes         String?
   createdAt     DateTime                 @default(now())
-  inventory     Inventory                @relation(fields: [inventoryId], references: [id], onDelete: Restrict)
+  inventory     Inventory                @relation(fields: [inventoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([type, referenceType, referenceId])
   @@index([inventoryId, createdAt])
@@ -528,8 +528,8 @@ model InventoryTransaction {
 }
 
 model Address {
-  id             String          @id @default(uuid()) @db.Uuid
-  customerId     String          @db.Uuid
+  id             String          @id @default(uuid()) @map("_id")
+  customerId     String
   label          String
   recipientName  String
   mobile         String
@@ -543,7 +543,7 @@ model Address {
   isDefault      Boolean         @default(false)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
-  customer       CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer       CustomerProfile @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   orders         MasterOrder[]
   checkoutQuotes CheckoutQuote[]
 
@@ -551,68 +551,68 @@ model Address {
 }
 
 model Cart {
-  id         String          @id @default(uuid()) @db.Uuid
-  customerId String          @unique @db.Uuid
+  id         String          @id @default(uuid()) @map("_id")
+  customerId String          @unique
   createdAt  DateTime        @default(now())
   updatedAt  DateTime        @updatedAt
-  customer   CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer   CustomerProfile @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   items      CartItem[]
 }
 
 model CartItem {
-  id                String   @id @default(uuid()) @db.Uuid
-  cartId            String   @db.Uuid
-  productId         String   @db.Uuid
+  id                String   @id @default(uuid()) @map("_id")
+  cartId            String
+  productId         String
   quantity          Int
-  unitPriceSnapshot Decimal  @db.Decimal(12, 2)
+  unitPriceSnapshot Float
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
-  cart              Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  product           Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  cart              Cart     @relation(fields: [cartId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product           Product  @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([cartId, productId])
   @@index([productId])
 }
 
 model CheckoutQuote {
-  id              String          @id @default(uuid()) @db.Uuid
-  customerId      String          @db.Uuid
-  addressId       String          @db.Uuid
-  productSubtotal Decimal         @db.Decimal(12, 2)
-  totalShipping   Decimal         @db.Decimal(12, 2)
-  payableTotal    Decimal         @db.Decimal(12, 2)
+  id              String          @id @default(uuid()) @map("_id")
+  customerId      String
+  addressId       String
+  productSubtotal Float
+  totalShipping   Float
+  payableTotal    Float
   currency        String          @default("INR")
   snapshot        Json
   expiresAt       DateTime
   consumedAt      DateTime?
   createdAt       DateTime        @default(now())
-  customer        CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  address         Address         @relation(fields: [addressId], references: [id], onDelete: Restrict)
+  customer        CustomerProfile @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  address         Address         @relation(fields: [addressId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   masterOrder     MasterOrder?
 
   @@index([customerId, expiresAt])
 }
 
 model MasterOrder {
-  id                      String          @id @default(uuid()) @db.Uuid
+  id                      String          @id @default(uuid()) @map("_id")
   orderNumber             String          @unique
-  customerId              String          @db.Uuid
-  checkoutQuoteId         String          @unique @db.Uuid
-  deliveryAddressId       String?         @db.Uuid
+  customerId              String
+  checkoutQuoteId         String          @unique
+  deliveryAddressId       String?
   deliveryAddressSnapshot Json
   status                  OrderStatus     @default(PENDING)
   paymentMethod           PaymentMethod
   currency                String          @default("INR")
-  productSubtotal         Decimal         @db.Decimal(12, 2)
-  totalShipping           Decimal         @db.Decimal(12, 2)
-  payableTotal            Decimal         @db.Decimal(12, 2)
+  productSubtotal         Float
+  totalShipping           Float
+  payableTotal            Float
   idempotencyKey          String          @unique
   placedAt                DateTime        @default(now())
   createdAt               DateTime        @default(now())
   updatedAt               DateTime        @updatedAt
-  customer                CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  checkoutQuote           CheckoutQuote   @relation(fields: [checkoutQuoteId], references: [id], onDelete: Restrict)
-  deliveryAddress         Address?        @relation(fields: [deliveryAddressId], references: [id], onDelete: SetNull)
+  customer                CustomerProfile @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  checkoutQuote           CheckoutQuote   @relation(fields: [checkoutQuoteId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  deliveryAddress         Address?        @relation(fields: [deliveryAddressId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   vendorOrders            VendorOrder[]
   payments                Payment[]
   refunds                 Refund[]
@@ -623,23 +623,23 @@ model MasterOrder {
 }
 
 model VendorOrder {
-  id                   String                  @id @default(uuid()) @db.Uuid
+  id                   String                  @id @default(uuid()) @map("_id")
   vendorOrderNumber    String                  @unique
-  masterOrderId        String                  @db.Uuid
-  vendorId             String                  @db.Uuid
+  masterOrderId        String
+  vendorId             String
   status               OrderStatus             @default(PENDING)
-  productSubtotal      Decimal                 @db.Decimal(12, 2)
-  shippingAmount       Decimal                 @db.Decimal(12, 2)
-  orderTotal           Decimal                 @db.Decimal(12, 2)
+  productSubtotal      Float
+  shippingAmount       Float
+  orderTotal           Float
   deliveredAt          DateTime?
   settlementEligibleAt DateTime?
   settlementStatus     SettlementStatus        @default(PENDING)
-  settlementAmount     Decimal?                @db.Decimal(12, 2)
+  settlementAmount     Float?
   settledAt            DateTime?
   createdAt            DateTime                @default(now())
   updatedAt            DateTime                @updatedAt
-  masterOrder          MasterOrder             @relation(fields: [masterOrderId], references: [id], onDelete: Restrict)
-  vendor               Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  masterOrder          MasterOrder             @relation(fields: [masterOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendor               Vendor                  @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   items                OrderItem[]
   shipment             Shipment?
   commissions          CommissionTransaction[]
@@ -654,23 +654,23 @@ model VendorOrder {
 }
 
 model OrderItem {
-  id                 String                 @id @default(uuid()) @db.Uuid
-  vendorOrderId      String                 @db.Uuid
-  productId          String                 @db.Uuid
+  id                 String                 @id @default(uuid()) @map("_id")
+  vendorOrderId      String
+  productId          String
   productName        String
   sku                String?
   quantity           Int
-  unitPrice          Decimal                @db.Decimal(12, 2)
-  gstRate            Decimal                @db.Decimal(5, 2)
-  lineTotal          Decimal                @db.Decimal(12, 2)
+  unitPrice          Float
+  gstRate            Float
+  lineTotal          Float
   productType        ProductType
   status             OrderStatus            @default(PENDING)
   cancellable        Boolean                @default(true)
   cancellationReason String?
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
-  vendorOrder        VendorOrder            @relation(fields: [vendorOrderId], references: [id], onDelete: Restrict)
-  product            Product                @relation(fields: [productId], references: [id], onDelete: Restrict)
+  vendorOrder        VendorOrder            @relation(fields: [vendorOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product            Product                @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   commission         CommissionTransaction?
   refunds            Refund[]
   returnRequest      ReturnRequest?
@@ -683,13 +683,13 @@ model OrderItem {
 }
 
 model Payment {
-  id                String        @id @default(uuid()) @db.Uuid
-  masterOrderId     String        @db.Uuid
+  id                String        @id @default(uuid()) @map("_id")
+  masterOrderId     String
   provider          String
   providerOrderId   String?       @unique
   providerPaymentId String?       @unique
   method            PaymentMethod
-  amount            Decimal       @db.Decimal(12, 2)
+  amount            Float
   currency          String        @default("INR")
   status            PaymentStatus @default(CREATED)
   idempotencyKey    String        @unique
@@ -698,15 +698,15 @@ model Payment {
   failureReason     String?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
-  masterOrder       MasterOrder   @relation(fields: [masterOrderId], references: [id], onDelete: Restrict)
+  masterOrder       MasterOrder   @relation(fields: [masterOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   refunds           Refund[]
 
   @@index([masterOrderId, status])
 }
 
 model Shipment {
-  id                 String         @id @default(uuid()) @db.Uuid
-  vendorOrderId      String         @unique @db.Uuid
+  id                 String         @id @default(uuid()) @map("_id")
+  vendorOrderId      String         @unique
   provider           String
   idempotencyKey     String         @unique
   providerShipmentId String?        @unique
@@ -719,61 +719,60 @@ model Shipment {
   deliveredAt        DateTime?
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
-  vendorOrder        VendorOrder    @relation(fields: [vendorOrderId], references: [id], onDelete: Restrict)
+  vendorOrder        VendorOrder    @relation(fields: [vendorOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   complaints         Complaint[]
 
   @@index([status, updatedAt])
 }
 
 model CommissionRule {
-  id            String                  @id @default(uuid()) @db.Uuid
-  categoryId    String?                 @db.Uuid
+  id            String                  @id @default(uuid()) @map("_id")
+  categoryId    String?
   productType   ProductType?
-  percentage    Decimal                 @db.Decimal(5, 2)
+  percentage    Float
   effectiveFrom DateTime
   effectiveTo   DateTime?
   isActive      Boolean                 @default(true)
   createdAt     DateTime                @default(now())
   updatedAt     DateTime                @updatedAt
-  category      Category?               @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  category      Category?               @relation(fields: [categoryId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   transactions  CommissionTransaction[]
 
   @@index([productType, categoryId, isActive, effectiveFrom])
 }
 
 model CommissionTransaction {
-  id            String         @id @default(uuid()) @db.Uuid
-  vendorId      String         @db.Uuid
-  vendorOrderId String         @db.Uuid
-  orderItemId   String         @unique @db.Uuid
-  ruleId        String         @db.Uuid
-  baseAmount    Decimal        @db.Decimal(12, 2)
-  percentage    Decimal        @db.Decimal(5, 2)
-  amount        Decimal        @db.Decimal(12, 2)
+  id            String         @id @default(uuid()) @map("_id")
+  vendorId      String
+  vendorOrderId String
+  orderItemId   String         @unique
+  ruleId        String
+  baseAmount    Float
+  percentage    Float
+  amount        Float
   createdAt     DateTime       @default(now())
-  vendor        Vendor         @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  vendorOrder   VendorOrder    @relation(fields: [vendorOrderId], references: [id], onDelete: Restrict)
-  orderItem     OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
-  rule          CommissionRule @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  vendor        Vendor         @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendorOrder   VendorOrder    @relation(fields: [vendorOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orderItem     OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  rule          CommissionRule @relation(fields: [ruleId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([vendorId, createdAt])
-  @@index([vendorOrderId])
 }
 
 model VendorLedger {
-  id            String          @id @default(uuid()) @db.Uuid
-  vendorId      String          @db.Uuid
-  vendorOrderId String?         @db.Uuid
+  id            String          @id @default(uuid()) @map("_id")
+  vendorId      String
+  vendorOrderId String?
   type          LedgerEntryType
   direction     LedgerDirection
-  amount        Decimal         @db.Decimal(12, 2)
-  balanceAfter  Decimal         @db.Decimal(12, 2)
+  amount        Float
+  balanceAfter  Float
   referenceType String
   referenceId   String
   description   String
   createdAt     DateTime        @default(now())
-  vendor        Vendor          @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  vendorOrder   VendorOrder?    @relation(fields: [vendorOrderId], references: [id], onDelete: Restrict)
+  vendor        Vendor          @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendorOrder   VendorOrder?    @relation(fields: [vendorOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([vendorId, type, referenceType, referenceId])
   @@index([vendorId, createdAt])
@@ -781,10 +780,10 @@ model VendorLedger {
 }
 
 model Settlement {
-  id                String           @id @default(uuid()) @db.Uuid
-  vendorId          String           @db.Uuid
+  id                String           @id @default(uuid()) @map("_id")
+  vendorId          String
   reference         String           @unique
-  amount            Decimal          @db.Decimal(12, 2)
+  amount            Float
   status            SettlementStatus @default(PENDING)
   providerReference String?
   failureReason     String?
@@ -792,36 +791,35 @@ model Settlement {
   settledAt         DateTime?
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
-  vendor            Vendor           @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  vendor            Vendor           @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   items             SettlementItem[]
 
   @@index([vendorId, status, createdAt])
 }
 
 model SettlementItem {
-  id               String      @id @default(uuid()) @db.Uuid
-  settlementId     String      @db.Uuid
-  vendorOrderId    String      @db.Uuid
-  grossAmount      Decimal     @db.Decimal(12, 2)
-  commissionAmount Decimal     @db.Decimal(12, 2)
-  refundAmount     Decimal     @db.Decimal(12, 2)
-  settlementAmount Decimal     @db.Decimal(12, 2)
-  settlement       Settlement  @relation(fields: [settlementId], references: [id], onDelete: Restrict)
-  vendorOrder      VendorOrder @relation(fields: [vendorOrderId], references: [id], onDelete: Restrict)
+  id               String      @id @default(uuid()) @map("_id")
+  settlementId     String
+  vendorOrderId    String
+  grossAmount      Float
+  commissionAmount Float
+  refundAmount     Float
+  settlementAmount Float
+  settlement       Settlement  @relation(fields: [settlementId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendorOrder      VendorOrder @relation(fields: [vendorOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@unique([settlementId, vendorOrderId])
   @@unique([vendorOrderId])
-  @@index([vendorOrderId])
 }
 
 model Refund {
-  id                String       @id @default(uuid()) @db.Uuid
-  masterOrderId     String       @db.Uuid
-  vendorOrderId     String?      @db.Uuid
-  orderItemId       String?      @db.Uuid
-  paymentId         String?      @db.Uuid
+  id                String       @id @default(uuid()) @map("_id")
+  masterOrderId     String
+  vendorOrderId     String?
+  orderItemId       String?
+  paymentId         String?
   method            RefundMethod
-  amount            Decimal      @db.Decimal(12, 2)
+  amount            Float
   reason            String
   status            RefundStatus @default(PENDING)
   providerReference String?      @unique
@@ -830,19 +828,19 @@ model Refund {
   failureReason     String?
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
-  masterOrder       MasterOrder  @relation(fields: [masterOrderId], references: [id], onDelete: Restrict)
-  vendorOrder       VendorOrder? @relation(fields: [vendorOrderId], references: [id], onDelete: Restrict)
-  orderItem         OrderItem?   @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
-  payment           Payment?     @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  masterOrder       MasterOrder  @relation(fields: [masterOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendorOrder       VendorOrder? @relation(fields: [vendorOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orderItem         OrderItem?   @relation(fields: [orderItemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  payment           Payment?     @relation(fields: [paymentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([masterOrderId, status])
   @@index([orderItemId])
 }
 
 model ReturnRequest {
-  id          String           @id @default(uuid()) @db.Uuid
-  orderItemId String           @unique @db.Uuid
-  customerId  String           @db.Uuid
+  id          String           @id @default(uuid()) @map("_id")
+  orderItemId String           @unique
+  customerId  String
   reason      String
   resolution  ReturnResolution
   evidence    Json?
@@ -851,52 +849,52 @@ model ReturnRequest {
   resolvedAt  DateTime?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
-  orderItem   OrderItem        @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
-  customer    CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  orderItem   OrderItem        @relation(fields: [orderItemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customer    CustomerProfile  @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([customerId, status, requestedAt])
 }
 
 model Replacement {
-  id                        String            @id @default(uuid()) @db.Uuid
-  orderItemId               String            @unique @db.Uuid
+  id                        String            @id @default(uuid()) @map("_id")
+  orderItemId               String            @unique
   reason                    String
   status                    ReplacementStatus @default(REQUESTED)
   replacementOrderReference String?
   trackingReference         String?
   createdAt                 DateTime          @default(now())
   updatedAt                 DateTime          @updatedAt
-  orderItem                 OrderItem         @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  orderItem                 OrderItem         @relation(fields: [orderItemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model Review {
-  id          String          @id @default(uuid()) @db.Uuid
-  customerId  String          @db.Uuid
-  productId   String          @db.Uuid
-  orderItemId String          @unique @db.Uuid
+  id          String          @id @default(uuid()) @map("_id")
+  customerId  String
+  productId   String
+  orderItemId String          @unique
   rating      Int
   comment     String
   images      Json?
   status      ReviewStatus    @default(PENDING)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
-  customer    CustomerProfile @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  product     Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
-  orderItem   OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  customer    CustomerProfile @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  product     Product         @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orderItem   OrderItem       @relation(fields: [orderItemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([productId, status, createdAt])
   @@index([customerId, createdAt])
 }
 
 model Complaint {
-  id              String             @id @default(uuid()) @db.Uuid
+  id              String             @id @default(uuid()) @map("_id")
   referenceNumber String             @unique
-  customerId      String             @db.Uuid
-  masterOrderId   String?            @db.Uuid
-  vendorOrderId   String?            @db.Uuid
-  orderItemId     String?            @db.Uuid
-  vendorId        String?            @db.Uuid
-  shipmentId      String?            @db.Uuid
+  customerId      String
+  masterOrderId   String?
+  vendorOrderId   String?
+  orderItemId     String?
+  vendorId        String?
+  shipmentId      String?
   category        ComplaintCategory
   subject         String
   description     String
@@ -905,12 +903,12 @@ model Complaint {
   resolution      String?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
-  customer        CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  masterOrder     MasterOrder?       @relation(fields: [masterOrderId], references: [id], onDelete: Restrict)
-  vendorOrder     VendorOrder?       @relation(fields: [vendorOrderId], references: [id], onDelete: Restrict)
-  orderItem       OrderItem?         @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
-  vendor          Vendor?            @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  shipment        Shipment?          @relation(fields: [shipmentId], references: [id], onDelete: Restrict)
+  customer        CustomerProfile    @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  masterOrder     MasterOrder?       @relation(fields: [masterOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendorOrder     VendorOrder?       @relation(fields: [vendorOrderId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  orderItem       OrderItem?         @relation(fields: [orderItemId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  vendor          Vendor?            @relation(fields: [vendorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  shipment        Shipment?          @relation(fields: [shipmentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   messages        ComplaintMessage[]
 
   @@index([customerId, status, createdAt])
@@ -918,21 +916,21 @@ model Complaint {
 }
 
 model ComplaintMessage {
-  id          String    @id @default(uuid()) @db.Uuid
-  complaintId String    @db.Uuid
-  authorId    String    @db.Uuid
+  id          String    @id @default(uuid()) @map("_id")
+  complaintId String
+  authorId    String
   authorRole  Role
   message     String
   attachments Json?
   createdAt   DateTime  @default(now())
-  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([complaintId, createdAt])
 }
 
 model Notification {
-  id                String             @id @default(uuid()) @db.Uuid
-  userId            String             @db.Uuid
+  id                String             @id @default(uuid()) @map("_id")
+  userId            String
   dedupeKey         String?            @unique
   channel           String
   templateKey       String
@@ -947,8 +945,8 @@ model Notification {
 }
 
 model AuditLog {
-  id            String   @id @default(uuid()) @db.Uuid
-  actorId       String?  @db.Uuid
+  id            String   @id @default(uuid()) @map("_id")
+  actorId       String?
   action        String
   entityType    String
   entityId      String
@@ -957,26 +955,26 @@ model AuditLog {
   ipAddress     String?
   userAgent     String?
   createdAt     DateTime @default(now())
-  actor         User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  actor         User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([entityType, entityId, createdAt])
   @@index([actorId, createdAt])
 }
 
 model IntegrationSetting {
-  key            String   @id
+  key            String   @id @map("_id")
   encryptedValue String
   valueHint      String
-  updatedById    String?  @db.Uuid
+  updatedById    String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
-  updatedBy      User?    @relation("IntegrationSettingUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedBy      User?    @relation("IntegrationSettingUpdater", fields: [updatedById], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([updatedById, updatedAt])
 }
 
 model ProviderEvent {
-  id            String    @id @default(uuid()) @db.Uuid
+  id            String    @id @default(uuid()) @map("_id")
   provider      String
   eventId       String
   eventType     String

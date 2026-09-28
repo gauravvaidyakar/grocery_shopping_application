@@ -1,6 +1,5 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Prisma } from "@prisma/client";
 import { FieldEncryptionService } from "../common/field-encryption.service";
 import { PrismaService } from "../database/prisma.service";
 import {
@@ -86,7 +85,7 @@ export class IntegrationSettingsService {
             action: existing ? "INTEGRATION_SETTING_UPDATED" : "INTEGRATION_SETTING_CREATED",
             entityType: "IntegrationSetting",
             entityId: key,
-            previousValue: existing ? { configured: true } : Prisma.JsonNull,
+            previousValue: existing ? { configured: true } : null,
             newValue: { configured: true, source: "DATABASE" },
           },
         });
