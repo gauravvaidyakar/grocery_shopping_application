@@ -1,0 +1,51 @@
+services:
+  - type: web
+    name: vishwaneed-api
+    runtime: node
+    plan: free
+    region: singapore
+    autoDeployTrigger: commit
+    buildCommand: npm ci --include=dev && npm run prisma:generate --workspace @vishwaneed/api && npm run build --workspace @vishwaneed/api
+    startCommand: npm run prisma:migrate --workspace @vishwaneed/api && node apps/api/dist/main.js
+    healthCheckPath: /api/v1/categories
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vishwaneed-postgres
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: BANK_DATA_ENCRYPTION_KEY
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: CUSTOMER_WEB_URL
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: PRIVATE_UPLOAD_DIR
+        value: /opt/render/project/src/apps/api/private-uploads
+      - key: PUBLIC_UPLOAD_DIR
+        value: /opt/render/project/src/apps/api/public-uploads
+      - key: INTERAKT_API_URL
+        value: https://api.interakt.ai/v1/public/message/
+      - key: SETTLEMENT_DAYS
+        value: "7"
+      - key: RETURN_WINDOW_DAYS
+        value: "7"
+      - key: CHECKOUT_QUOTE_TTL_MINUTES
+        value: "10"
+
+databases:
+  - name: vishwaneed-postgres
+    plan: free
+    region: singapore
+    databaseName: vishwaneed
+    user: vishwaneed
+    ipAllowList: []

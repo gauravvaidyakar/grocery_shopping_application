@@ -1,0 +1,94 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "cd ../.. && npm ci",
+  "buildCommand": "cd ../.. && npm run build --workspace @vishwaneed/customer-web",
+  "outputDirectory": "dist",
+  "redirects": [
+    { "source": "/Admin", "destination": "/admin", "permanent": true },
+    {
+      "source": "/Admin/:path*",
+      "destination": "/admin/:path*",
+      "permanent": true
+    },
+    { "source": "/Vendor", "destination": "/vendor", "permanent": true },
+    {
+      "source": "/Vendor/:path*",
+      "destination": "/vendor/:path*",
+      "permanent": true
+    },
+    { "source": "/Vender", "destination": "/vendor", "permanent": true },
+    {
+      "source": "/Vender/:path*",
+      "destination": "/vendor/:path*",
+      "permanent": true
+    },
+    { "source": "/vender", "destination": "/vendor", "permanent": true },
+    {
+      "source": "/vender/:path*",
+      "destination": "/vendor/:path*",
+      "permanent": true
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/:path*",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/api/v1/categories",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=600, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/api/v1/home-hero-slides",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=300, s-maxage=600, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/api/v1/category-images/:path*",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, s-maxage=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/api/v1/products",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400" }
+      ]
+    },
+    {
+      "source": "/api/v1/products/:path*",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=60, s-maxage=300, stale-while-revalidate=86400" }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/admin",
+      "destination": "https://vishwaneed-marketplace-admin-panel.vercel.app/admin"
+    },
+    {
+      "source": "/admin/:path*",
+      "destination": "https://vishwaneed-marketplace-admin-panel.vercel.app/admin/:path*"
+    },
+    {
+      "source": "/vendor",
+      "destination": "https://vishwaneed-marketplace-vendor-panel.vercel.app/vendor"
+    },
+    {
+      "source": "/vendor/:path*",
+      "destination": "https://vishwaneed-marketplace-vendor-panel.vercel.app/vendor/:path*"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "https://vishwaneed-api.onrender.com/api/:path*"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

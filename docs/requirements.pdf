@@ -1,0 +1,108 @@
+VISHWANEED
+Multi-Vendor Marketplace – Important
+Requirements
+Prepared as a practical reference for marketplace development
+1. Business Model & Marketplace Structure
+• Vishwaneed is a technology-enabled multi-vendor marketplace connecting rural producers/vendors directly with
+customers.
+• Initial focus: Food Products, including millets, millet-based products and jaggery.
+• Future categories: Handicrafts, Clothing, Home & Lifestyle and other Made-in-India products.
+• Primary revenue model: commission on successful marketplace sales from vendors.
+2. Three Core Panels
+Panel
+Main Purpose
+Customer Panel
+Vendor Panel
+Browse products, search/filter, cart, checkout, payment, tracking, reviews and complaints.
+Registration, KYC/documents, products, inventory, orders, sales, commission, settlements and complaints.
+Admin Panel
+Vendor verification, product approval, quality control, orders, payments, commission, settlements, refunds, complaints, reviews and reports.
+3. Customer-Side Requirements
+• Registration & Login: mobile/email registration, OTP verification, login/logout, forgot password.
+• Profile & Address: customer profile, address management and multiple delivery addresses.
+• Home Page: featured products, trending products, new arrivals, best sellers, categories, vendor highlights, regional
+products and offers.
+• Catalogue & Search: categories, search, filters and sorting.
+• Product Details: images/gallery, description, ingredients/specifications, weight/size, price, discount, stock, vendor
+information, reviews and ratings.
+• Cart: add/remove products, quantity update, vendor-wise grouping, subtotal, delivery charges, discount, coupon and
+taxes.
+• Checkout & Payment: delivery address, contact information, vendor-wise summary, delivery charges, discount,
+taxes, final payable amount and payment method.
+• Order Tracking: order placed, payment confirmed, accepted, processing, packed, shipped, out for delivery,
+delivered, cancelled and returned/refunded.
+• Reviews: product/vendor ratings, reviews, review images, edit and report inappropriate reviews.
+• Complaints: complaint creation, assignment, vendor/admin response, resolution and closure.
+4. Multi-Vendor Order Splitting – Core Feature
+When a customer buys products from multiple vendors in one checkout, the system should automatically create a
+master customer order and separate vendor orders. Each vendor should see and manage only its own
+products/orders. Manual forwarding by Admin should not be required.
+Example:
+Master Customer Order
+fi Vendor Order A fi Vendor A
+fi Vendor Order B fi Vendor B
+fi Vendor Order C fi Vendor C
+5. Vendor Panel Requirements
+• Vendor registration with mobile/email verification.
+• Business information, owner details, business address, bank details, tax information and product categories.
+• KYC/document submission: identity proof, address proof, business registration and applicable food-related
+licences/certifications.
+• Vendor status: Pending Verification, Documents Required, Under Review, Approved, Rejected, Suspended.
+• Dashboard: total/new/pending/completed/cancelled orders, total sales, commission, net settlement,
+pending/completed payout, product count, low-stock products, reviews and complaints.
+• Product management, inventory management and order processing.
+• Automated notifications for new orders and vendor orders.
+6. Admin Panel Requirements
+• Dashboard: total customers, vendors, active vendors, pending verification, products, pending products, orders,
+multi-vendor orders, sales, commission, settlements, refunds, complaints, reviews, inventory and revenue.
+• Vendor Management: view, approve, reject, suspend vendors; verify documents; manage
+profiles/categories/commission; view sales, orders, settlements, complaints and reviews.
+• Product approval and quality-control workflow.
+• Order management, payment confirmation, cancellation and refunds.
+• Commission and vendor settlement/reconciliation.
+• Customer complaints and review moderation.
+• Reports and basic business analytics.
+7. Payment, Commission & Settlement
+• Payment gateway integration can use a suitable provider selected by the client.
+• Required payment functions: payment success/failure, transaction ID, verification, payment status, history, refund
+initiation and reconciliation.
+• Marketplace must calculate commission and maintain a vendor ledger.
+• Vendor-wise settlement/payout information should be visible to Admin and Vendor.
+8. Logistics & WhatsApp
+• Shipping integration should support order/vendor-level logistics, tracking and AWB where applicable.
+• A suitable logistics provider can be selected based on business requirements.
+• WhatsApp API integration should support automated customer/vendor notifications.
+• Notifications may include order confirmation, payment confirmation, processing, shipment, delivery, cancellation,
+refund and complaint updates.
+9. Technology & Infrastructure
+• Responsive customer web application; Android/iOS can be considered according to scope.
+• Backend/API, database, authentication and role-based access control.
+• Cloud infrastructure and scalable architecture.
+• Potential technologies previously considered: NestJS, PostgreSQL, Prisma, JWT, AWS S3 or Cloudflare R2. These
+should be treated as options unless finalized.
+• Security and data protection should be included in the implementation.
+10. Critical End-to-End Marketplace Flow
+1. Vendor Registration fi KYC/Document Submission fi Admin Verification fi Vendor Approval
+2. Vendor fi Product Submission fi Admin Product Approval fi Product Goes Live
+3. Customer fi Browse/Search fi Product Details fi Cart fi Checkout fi Online Payment
+4. Payment fi Master Order fi Automatic Vendor-wise Order Splitting fi Vendor Processing
+5. Packing fi Shipping fi Tracking fi Delivery fi Customer Review
+6. Order Completion fi Commission Calculation fi Vendor Ledger fi Settlement/Payout
+11. Trust, Quality & Customer Support
+• Vendor verification and product approval are important for customer trust.
+• Quality/hygiene information should be handled appropriately for food products.
+• Customer complaints should cover product quality, damaged/wrong/missing product, delivery, refund, vendor issues
+and other issues.
+• Admin should have moderation/control over reviews and complaints.
+12. What Should Be Confirmed Before Development
+• Final commission structure and settlement cycle.
+• Final payment gateway and marketplace settlement method.
+• Final logistics provider/API and shipping-charge rules.
+• Vendor KYC and eligibility criteria.
+• Product quality/approval checklist.
+• Return, cancellation and refund policy.
+• GST/tax treatment and invoice requirements.
+• WhatsApp provider/API and message-template requirements.
+• Exact MVP scope, timeline, maintenance/support and future-feature pricing.
+Reference note: This document consolidates the marketplace requirements and workflows described in the provided Tech Surya IT
+Solution quotation for the Vishwaneed multi-vendor rural products marketplace

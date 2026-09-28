@@ -1,0 +1,23 @@
+{
+  "name": "vishwaneed-marketplace",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/customer-web",
+    "apps/vendor-panel",
+    "apps/admin-panel",
+    "apps/api"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @vishwaneed/customer-web",
+    "dev:api": "npm run start:dev --workspace @vishwaneed/api",
+    "db:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-local-db.ps1",
+    "dev:vendor": "npm run dev --workspace @vishwaneed/vendor-panel",
+    "dev:admin": "npm run dev --workspace @vishwaneed/admin-panel",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "test:responsive": "node scripts/responsive-audit.mjs"
+  }
+}
