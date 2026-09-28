@@ -1,7 +1,7 @@
 import type { ConfigService } from "@nestjs/config";
 import { describe, expect, it, vi } from "vitest";
 import { FieldEncryptionService } from "../src/common/field-encryption.service";
-import type { PrismaService } from "../src/database/prisma.service";
+import type { MongoDatabaseService } from "../src/database/mongo-database.service";
 import { IntegrationSettingsService } from "../src/integration-settings/integration-settings.service";
 
 const encryption = new FieldEncryptionService({
@@ -16,7 +16,7 @@ describe("integration settings", () => {
   });
 
   it("returns only masked configuration metadata to administrators", async () => {
-    const prisma = {
+    const database = {
       integrationSetting: {
         findMany: vi.fn().mockResolvedValue([
           {
@@ -26,9 +26,9 @@ describe("integration settings", () => {
           },
         ]),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const config = { get: vi.fn() } as unknown as ConfigService;
-    const service = new IntegrationSettingsService(prisma, config, encryption);
+    const service = new IntegrationSettingsService(database, config, encryption);
 
     const result = await service.list();
     const interakt = result.find((item) => item.key === "INTERAKT_API_KEY");
@@ -50,12 +50,12 @@ describe("integration settings", () => {
       },
       auditLog: { create: auditCreate },
     };
-    const prisma = {
-      $transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
+    const database = {
+      transaction: vi.fn((callback: (client: typeof tx) => unknown) => callback(tx)),
       integrationSetting: { findMany: vi.fn().mockResolvedValue([]) },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const config = { get: vi.fn() } as unknown as ConfigService;
-    const service = new IntegrationSettingsService(prisma, config, encryption);
+    const service = new IntegrationSettingsService(database, config, encryption);
 
     await service.update("admin-id", { INTERAKT_API_KEY: "live-secret-value" });
 
@@ -68,7 +68,7 @@ describe("integration settings", () => {
   });
 
   it("exposes MSG91 configuration metadata without exposing its auth key", async () => {
-    const prisma = {
+    const database = {
       integrationSetting: {
         findMany: vi.fn().mockResolvedValue([
           {
@@ -78,9 +78,9 @@ describe("integration settings", () => {
           },
         ]),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new IntegrationSettingsService(
-      prisma,
+      database,
       { get: vi.fn() } as unknown as ConfigService,
       encryption,
     );

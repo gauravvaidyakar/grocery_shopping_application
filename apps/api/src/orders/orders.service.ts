@@ -8,13 +8,13 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
-  Prisma,
+  MongoData,
   ProductStatus,
   VendorStatus,
-} from "@prisma/client";
+} from "../database/domain.types";
 import { randomUUID } from "node:crypto";
 import type { CheckoutSnapshot } from "../checkout/checkout.service";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import {
   finalizeMasterOrder,
   releaseOrderItemInventory,
@@ -47,14 +47,43 @@ export function calculateCommissionAmount(
   baseAmount: number,
   percentage: number,
 ): number {
-  return new Prisma.Decimal(baseAmount)
+  return new MongoData.Decimal(baseAmount)
     .mul(percentage)
     .div(100)
     .toDecimalPlaces(2)
     .toNumber();
 }
 
-type CancelableOrderItem = Prisma.OrderItemGetPayload<{
+export type InclusiveGstBreakdown = {
+  taxableAmountMinor: number;
+  gstAmountMinor: number;
+  totalAmountMinor: number;
+};
+
+/**
+ * Extracts tax from a GST-inclusive amount using integer paise. Keeping the
+ * calculation in minor units prevents floating-point drift and guarantees
+ * that taxable + GST always equals the amount charged to the customer.
+ */
+export function calculateInclusiveGstBreakdown(
+  totalAmountMinor: number,
+  gstRate: number,
+): InclusiveGstBreakdown {
+  if (!Number.isInteger(totalAmountMinor) || totalAmountMinor < 0)
+    throw new RangeError("totalAmountMinor must be a non-negative integer");
+  if (!Number.isFinite(gstRate) || gstRate < 0 || gstRate > 100)
+    throw new RangeError("gstRate must be between 0 and 100");
+  const gstAmountMinor = Math.round(
+    (totalAmountMinor * gstRate) / (100 + gstRate),
+  );
+  return {
+    taxableAmountMinor: totalAmountMinor - gstAmountMinor,
+    gstAmountMinor,
+    totalAmountMinor,
+  };
+}
+
+type CancelableOrderItem = MongoData.OrderItemGetPayload<{
   include: {
     product: { include: { inventory: true } };
     vendorOrder: { include: { masterOrder: { include: { payments: true } } } };
@@ -80,22 +109,22 @@ const CUSTOMER_ORDER_INCLUDE = {
       },
     },
   },
-} satisfies Prisma.MasterOrderInclude;
+} satisfies MongoData.MasterOrderInclude;
 
-type CustomerOrderRecord = Prisma.MasterOrderGetPayload<{
+type CustomerOrderRecord = MongoData.MasterOrderGetPayload<{
   include: typeof CUSTOMER_ORDER_INCLUDE;
 }>;
 @Injectable()
 export class OrdersService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly vendors: VendorsService,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
   ) {}
   async create(userId: string, input: CreateOrderDto) {
-    const order = await this.prisma.$transaction(
-      async (tx) => {
+    const order = await this.database.transaction(
+      async (tx: any) => {
         const existing = await tx.masterOrder.findFirst({
           where: { checkoutQuoteId: input.quoteId, customer: { userId } },
           include: CUSTOMER_ORDER_INCLUDE,
@@ -130,15 +159,15 @@ export class OrdersService {
           where: { id: input.addressId, customerId: quote.customerId },
         });
         if (!address) throw new NotFoundException("Delivery address not found");
-        const productIds = snapshot.vendors.flatMap((vendor) =>
-          vendor.items.map((item) => item.productId),
+        const productIds = snapshot.vendors.flatMap((vendor: any) =>
+          vendor.items.map((item: any) => item.productId),
         );
         const products = await tx.product.findMany({
           where: { id: { in: productIds } },
           include: { vendor: true, inventory: true },
         });
-        const productMap = new Map(
-          products.map((product) => [product.id, product]),
+        const productMap = new Map<string, any>(
+          products.map((product: any) => [product.id, product]),
         );
         for (const vendorGroup of snapshot.vendors)
           for (const item of vendorGroup.items) {
@@ -221,6 +250,17 @@ export class OrdersService {
             },
           });
           let commissionTotal = 0;
+          const invoiceLineItems: Array<{
+            orderItemId: string;
+            productId: string;
+            productName: string;
+            quantity: number;
+            unitPriceMinor: number;
+            gstRate: number;
+            taxableAmountMinor: number;
+            gstAmountMinor: number;
+            totalAmountMinor: number;
+          }> = [];
           for (const item of vendorGroup.items) {
             const product = productMap.get(item.productId)!;
             const inventory = product.inventory!;
@@ -265,6 +305,19 @@ export class OrdersService {
               rule.percentage,
             );
             commissionTotal += commissionAmount;
+            const gst = calculateInclusiveGstBreakdown(
+              item.lineTotalMinor,
+              Number(product.gstRate),
+            );
+            invoiceLineItems.push({
+              orderItemId: orderItem.id,
+              productId: product.id,
+              productName: product.name,
+              quantity: item.quantity,
+              unitPriceMinor: item.unitPriceMinor,
+              gstRate: Number(product.gstRate),
+              ...gst,
+            });
             await tx.commissionTransaction.create({
               data: {
                 vendorId: vendorOrder.vendorId,
@@ -282,6 +335,39 @@ export class OrdersService {
             data: {
               settlementAmount:
                 vendorGroup.productSubtotalMinor / 100 - commissionTotal,
+            },
+          });
+          const vendorInvoiceGstMinor = invoiceLineItems.reduce(
+            (total, item) => total + item.gstAmountMinor,
+            0,
+          );
+          const vendorInvoiceTotalMinor = vendorGroup.productSubtotalMinor;
+          if (tx.vendorInvoice) await tx.vendorInvoice.create({
+            data: {
+              invoiceNumber: `VIN-${vendorOrder.vendorOrderNumber}`,
+              vendorOrderId: vendorOrder.id,
+              vendorId: vendorOrder.vendorId,
+              currency: masterOrder.currency,
+              subtotal:
+                (vendorInvoiceTotalMinor - vendorInvoiceGstMinor) / 100,
+              gstAmount: vendorInvoiceGstMinor / 100,
+              total: vendorInvoiceTotalMinor / 100,
+              gstInclusive: true,
+              lineItems: invoiceLineItems,
+              issuedAt: new Date(),
+            },
+          });
+          if (tx.commissionInvoice) await tx.commissionInvoice.create({
+            data: {
+              invoiceNumber: `CIN-${vendorOrder.vendorOrderNumber}`,
+              vendorOrderId: vendorOrder.id,
+              vendorId: vendorOrder.vendorId,
+              currency: masterOrder.currency,
+              taxableAmount: commissionTotal,
+              gstAmount: 0,
+              total: commissionTotal,
+              gstInclusive: true,
+              issuedAt: new Date(),
             },
           });
         }
@@ -302,8 +388,8 @@ export class OrdersService {
         await tx.cartItem.deleteMany({
           where: {
             id: {
-              in: snapshot.vendors.flatMap((vendor) =>
-                vendor.items.map((item) => item.cartItemId),
+              in: snapshot.vendors.flatMap((vendor: any) =>
+                vendor.items.map((item: any) => item.cartItemId),
               ),
             },
           },
@@ -323,7 +409,7 @@ export class OrdersService {
     return this.presentCustomerOrder(order);
   }
 
-  private parseSnapshot(value: Prisma.JsonValue): CheckoutSnapshot {
+  private parseSnapshot(value: MongoData.JsonValue): CheckoutSnapshot {
     if (
       !value ||
       typeof value !== "object" ||
@@ -335,15 +421,15 @@ export class OrdersService {
     return value as unknown as CheckoutSnapshot;
   }
   async customerList(userId: string) {
-    const orders = await this.prisma.masterOrder.findMany({
+    const orders = await this.database.masterOrder.findMany({
       where: { customer: { userId } },
       include: CUSTOMER_ORDER_INCLUDE,
       orderBy: { createdAt: "desc" },
     });
-    return orders.map((order) => this.presentCustomerOrder(order));
+    return orders.map((order: any) => this.presentCustomerOrder(order));
   }
   async customerGet(userId: string, id: string) {
-    const order = await this.prisma.masterOrder.findFirst({
+    const order = await this.database.masterOrder.findFirst({
       where: { id, customer: { userId } },
       include: CUSTOMER_ORDER_INCLUDE,
     });
@@ -351,7 +437,7 @@ export class OrdersService {
     return this.presentCustomerOrder(order);
   }
   async vendorList(userId: string) {
-    return this.prisma.vendorOrder.findMany({
+    return this.database.vendorOrder.findMany({
       where: { vendorId: await this.vendors.getVendorId(userId) },
       include: {
         items: true,
@@ -368,7 +454,7 @@ export class OrdersService {
     });
   }
   async vendorGet(userId: string, id: string) {
-    const order = await this.prisma.vendorOrder.findFirst({
+    const order = await this.database.vendorOrder.findFirst({
       where: { id, vendorId: await this.vendors.getVendorId(userId) },
       include: {
         items: { include: { product: { include: { images: { take: 1, orderBy: { sortOrder: "asc" } } } }, returnRequest: true, replacement: true } },
@@ -383,11 +469,11 @@ export class OrdersService {
   }
   async transition(userId: string, id: string, status: OrderStatus) {
     const vendorId = await this.vendors.getVendorId(userId);
-    const order = await this.prisma.vendorOrder.findFirst({
+    const order = await this.database.vendorOrder.findFirst({
       where: { id, vendorId },
     });
     if (!order) throw new NotFoundException("Vendor order not found");
-    if (!TRANSITIONS[order.status].includes(status))
+    if (!TRANSITIONS[order.status as OrderStatus].includes(status))
       throw new BadRequestException(
         `Invalid transition from ${order.status} to ${status}`,
       );
@@ -399,7 +485,7 @@ export class OrdersService {
             this.config.get<number>("SETTLEMENT_DAYS", 7) * 86_400_000,
         )
       : undefined;
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.database.transaction(async (tx: any) => {
       const updated = await tx.vendorOrder.update({
         where: { id },
         data: { status, deliveredAt, settlementEligibleAt },
@@ -418,7 +504,7 @@ export class OrdersService {
         where: { masterOrderId: order.masterOrderId },
         select: { status: true },
       });
-      if (remaining.every((vendorOrder) => vendorOrder.status === status)) {
+      if (remaining.every((vendorOrder: any) => vendorOrder.status === status)) {
         await tx.masterOrder.update({
           where: { id: order.masterOrderId },
           data: { status },
@@ -438,7 +524,7 @@ export class OrdersService {
     reason: string,
   ) {
     const vendorId = await this.vendors.getVendorId(userId);
-    const item = await this.prisma.orderItem.findFirst({
+    const item = await this.database.orderItem.findFirst({
       where: { id: itemId, vendorOrderId, vendorOrder: { vendorId } },
       include: {
         product: { include: { inventory: true } },
@@ -461,7 +547,7 @@ export class OrdersService {
     itemId: string,
     reason: string,
   ) {
-    const item = await this.prisma.orderItem.findFirst({
+    const item = await this.database.orderItem.findFirst({
       where: {
         id: itemId,
         vendorOrder: { masterOrder: { id: orderId, customer: { userId } } },
@@ -487,13 +573,13 @@ export class OrdersService {
       currency: order.currency,
     });
     const payment = order.payments[0];
-    const hasCancelled = order.vendorOrders.some((vendor) =>
-      vendor.items.some((item) => item.status === OrderStatus.CANCELLED),
+    const hasCancelled = order.vendorOrders.some((vendor: any) =>
+      vendor.items.some((item: any) => item.status === OrderStatus.CANCELLED),
     );
-    const hasActive = order.vendorOrders.some((vendor) =>
-      vendor.items.some((item) => item.status !== OrderStatus.CANCELLED),
+    const hasActive = order.vendorOrders.some((vendor: any) =>
+      vendor.items.some((item: any) => item.status !== OrderStatus.CANCELLED),
     );
-    const address = order.deliveryAddressSnapshot as Prisma.JsonObject;
+    const address = order.deliveryAddressSnapshot as MongoData.JsonObject;
     return {
       masterOrderId: order.id,
       masterOrderNumber: order.orderNumber,
@@ -524,7 +610,7 @@ export class OrdersService {
         pincode: address.pincode,
         isDefault: order.deliveryAddress?.isDefault ?? false,
       },
-      vendorOrders: order.vendorOrders.map((vendorOrder) => ({
+      vendorOrders: order.vendorOrders.map((vendorOrder: any) => ({
         id: vendorOrder.id,
         vendorOrderNumber: vendorOrder.vendorOrderNumber,
         vendor: {
@@ -538,7 +624,7 @@ export class OrdersService {
         productSubtotal: money(vendorOrder.productSubtotal),
         shipping: money(vendorOrder.shippingAmount),
         orderTotal: money(vendorOrder.orderTotal),
-        items: vendorOrder.items.map((item) => ({
+        items: vendorOrder.items.map((item: any) => ({
           id: item.id,
           productId: item.productId,
           productName: item.productName,
@@ -581,7 +667,7 @@ export class OrdersService {
                   comment: item.review.comment,
                   images: Array.isArray(item.review.images)
                     ? item.review.images.filter(
-                        (image): image is string => typeof image === "string",
+                        (image: unknown): image is string => typeof image === "string",
                       )
                     : [],
                   status: item.review.status,
@@ -618,7 +704,7 @@ export class OrdersService {
       statusLabel: status.replaceAll("_", " "),
       updatedAt: shipment.updatedAt.toISOString(),
       estimatedDelivery: shipment.estimatedDelivery?.toISOString(),
-      events: events.flatMap((event, index) => {
+      events: events.flatMap((event: any, index: any) => {
         if (!event || typeof event !== "object" || Array.isArray(event)) {
           return [];
         }
@@ -652,7 +738,7 @@ export class OrdersService {
     if (!item.cancellable || !cancellableStatus)
       throw new BadRequestException("Item is not cancellable");
     const vendorOrderId = item.vendorOrderId;
-    return this.prisma.$transaction(async (tx) => {
+    return this.database.transaction(async (tx: any) => {
       const updated = await tx.orderItem.update({
         where: { id: item.id },
         data: {
@@ -663,7 +749,7 @@ export class OrdersService {
       });
       await releaseOrderItemInventory(tx, item, reason);
       const paidPayment = item.vendorOrder.masterOrder.payments.find(
-        (payment) => payment.status === PaymentStatus.PAID,
+        (payment: any) => payment.status === PaymentStatus.PAID,
       );
       if (paidPayment)
         await tx.refund.upsert({

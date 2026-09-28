@@ -12,9 +12,9 @@ import {
   VendorDocumentType,
   VendorStatus,
   VerificationStatus,
-} from "@prisma/client";
+} from "../database/domain.types";
 import { FieldEncryptionService } from "../common/field-encryption.service";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import type {
   BankAccountDto,
   UpdateVendorContactDto,
@@ -33,7 +33,7 @@ const REQUIRED_DOCUMENTS: VendorDocumentType[] = [
 @Injectable()
 export class VendorsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly encryption: FieldEncryptionService,
     private readonly config: ConfigService,
   ) {}
@@ -61,25 +61,25 @@ export class VendorsService {
       pendingSettlement,
       settledAmount,
       recentOrders,
-    ] = await this.prisma.$transaction([
-      this.prisma.product.count({ where: { vendorId } }),
-      this.prisma.product.count({ where: { vendorId, status: ProductStatus.APPROVED } }),
-      this.prisma.product.count({ where: { vendorId, status: ProductStatus.PENDING_APPROVAL } }),
-      this.prisma.inventory.count({ where: { product: { vendorId }, quantity: { lte: 5 } } }),
-      this.prisma.vendorOrder.count({ where: { vendorId } }),
-      this.prisma.vendorOrder.count({ where: { vendorId, createdAt: { gte: today } } }),
-      this.prisma.vendorOrder.count({ where: { vendorId, status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.PACKED] } } }),
-      this.prisma.vendorOrder.count({ where: { vendorId, status: OrderStatus.DELIVERED } }),
-      this.prisma.vendorOrder.count({ where: { vendorId, status: OrderStatus.CANCELLED } }),
-      this.prisma.returnRequest.count({ where: { orderItem: { vendorOrder: { vendorId } } } }),
-      this.prisma.review.count({ where: { product: { vendorId } } }),
-      this.prisma.complaint.count({ where: { vendorId } }),
-      this.prisma.vendorOrder.aggregate({ where: { vendorId, status: OrderStatus.DELIVERED }, _sum: { productSubtotal: true } }),
-      this.prisma.commissionTransaction.aggregate({ where: { vendorId }, _sum: { amount: true } }),
-      this.prisma.vendorOrder.aggregate({ where: { vendorId }, _sum: { settlementAmount: true } }),
-      this.prisma.settlement.aggregate({ where: { vendorId, status: { in: [SettlementStatus.PENDING, SettlementStatus.ELIGIBLE, SettlementStatus.PROCESSING] } }, _sum: { amount: true } }),
-      this.prisma.settlement.aggregate({ where: { vendorId, status: SettlementStatus.SETTLED }, _sum: { amount: true } }),
-      this.prisma.vendorOrder.findMany({ where: { vendorId }, include: { items: true, shipment: true }, orderBy: { createdAt: "desc" }, take: 5 }),
+    ] = await Promise.all([
+      this.database.product.count({ where: { vendorId } }),
+      this.database.product.count({ where: { vendorId, status: ProductStatus.APPROVED } }),
+      this.database.product.count({ where: { vendorId, status: ProductStatus.PENDING_APPROVAL } }),
+      this.database.inventory.count({ where: { product: { vendorId }, quantity: { lte: 5 } } }),
+      this.database.vendorOrder.count({ where: { vendorId } }),
+      this.database.vendorOrder.count({ where: { vendorId, createdAt: { gte: today } } }),
+      this.database.vendorOrder.count({ where: { vendorId, status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.PACKED] } } }),
+      this.database.vendorOrder.count({ where: { vendorId, status: OrderStatus.DELIVERED } }),
+      this.database.vendorOrder.count({ where: { vendorId, status: OrderStatus.CANCELLED } }),
+      this.database.returnRequest.count({ where: { orderItem: { vendorOrder: { vendorId } } } }),
+      this.database.review.count({ where: { product: { vendorId } } }),
+      this.database.complaint.count({ where: { vendorId } }),
+      this.database.vendorOrder.aggregate({ where: { vendorId, status: OrderStatus.DELIVERED }, _sum: { productSubtotal: true } }),
+      this.database.commissionTransaction.aggregate({ where: { vendorId }, _sum: { amount: true } }),
+      this.database.vendorOrder.aggregate({ where: { vendorId }, _sum: { settlementAmount: true } }),
+      this.database.settlement.aggregate({ where: { vendorId, status: { in: [SettlementStatus.PENDING, SettlementStatus.ELIGIBLE, SettlementStatus.PROCESSING] } }, _sum: { amount: true } }),
+      this.database.settlement.aggregate({ where: { vendorId, status: SettlementStatus.SETTLED }, _sum: { amount: true } }),
+      this.database.vendorOrder.findMany({ where: { vendorId }, include: { items: true, shipment: true }, orderBy: { createdAt: "desc" }, take: 5 }),
     ]);
     return {
       totalProducts, activeProducts, pendingProducts, lowStockProducts,
@@ -95,7 +95,7 @@ export class VendorsService {
   }
 
   async getByUser(userId: string) {
-    const vendor = await this.prisma.vendor.findUnique({
+    const vendor = await this.database.vendor.findUnique({
       where: { userId },
       include: {
         documents: {
@@ -140,7 +140,7 @@ export class VendorsService {
       throw new ForbiddenException(
         "Approved or suspended vendor details require administrator review",
       );
-    return this.prisma.vendor.update({
+    return this.database.vendor.update({
       where: { id: vendor.id },
       data: { ...input, businessAddress: input.businessAddress },
     });
@@ -153,7 +153,7 @@ export class VendorsService {
     const mobileChanged =
       normalizeMobile(vendor.businessMobile) !==
       normalizeMobile(input.businessMobile);
-    return this.prisma.$transaction(async (tx) => {
+    return this.database.transaction(async (tx: any) => {
       const updated = await tx.vendor.update({
         where: { id: vendor.id },
         data: {
@@ -174,11 +174,11 @@ export class VendorsService {
 
   async saveBankAccount(userId: string, input: BankAccountDto) {
     const vendorId = await this.getVendorId(userId);
-    return this.prisma.vendorBankAccount.upsert({
+    return this.database.vendorBankAccount.upsert({
       where: {
         id:
           (
-            await this.prisma.vendorBankAccount.findFirst({
+            await this.database.vendorBankAccount.findFirst({
               where: { vendorId, isPrimary: true },
               select: { id: true },
             })
@@ -224,8 +224,8 @@ export class VendorsService {
         "KYC cannot be submitted in the current vendor state",
       );
     }
-    const present = new Set(vendor.documents.map((document) => document.type));
-    const missing = REQUIRED_DOCUMENTS.filter((type) => !present.has(type));
+    const present = new Set(vendor.documents.map((document: any) => document.type));
+    const missing = REQUIRED_DOCUMENTS.filter((type: any) => !present.has(type));
     if (missing.length > 0)
       throw new BadRequestException(
         `Missing required documents: ${missing.join(", ")}`,
@@ -250,11 +250,11 @@ export class VendorsService {
     toStatus: VendorStatus,
     reason: string,
   ) {
-    const vendor = await this.prisma.vendor.findUnique({
+    const vendor = await this.database.vendor.findUnique({
       where: { id: vendorId },
     });
     if (!vendor) throw new NotFoundException("Vendor not found");
-    return this.prisma.$transaction(async (tx) => {
+    return this.database.transaction(async (tx: any) => {
       const updated = await tx.vendor.update({
         where: { id: vendorId },
         data: {
@@ -290,14 +290,14 @@ export class VendorsService {
 
   async assertApprovalReady(vendorId: string): Promise<void> {
     await this.assertKycVerified(vendorId);
-    const vendor = await this.prisma.vendor.findUnique({
+    const vendor = await this.database.vendor.findUnique({
       where: { id: vendorId },
       include: { inspections: true },
     });
     if (!vendor) throw new NotFoundException("Vendor not found");
     if (
       !vendor.inspections.some(
-        (item) =>
+        (item: any) =>
           item.status === "PASSED" &&
           item.documentsVerified &&
           item.premisesVerified &&
@@ -308,24 +308,24 @@ export class VendorsService {
   }
 
   async assertKycVerified(vendorId: string): Promise<void> {
-    const vendor = await this.prisma.vendor.findUnique({
+    const vendor = await this.database.vendor.findUnique({
       where: { id: vendorId },
       include: { documents: true, bankAccounts: true },
     });
     if (!vendor) throw new NotFoundException("Vendor not found");
     const verified = new Set(
       vendor.documents
-        .filter((item) => item.status === VerificationStatus.VERIFIED)
-        .map((item) => item.type),
+        .filter((item: any) => item.status === VerificationStatus.VERIFIED)
+        .map((item: any) => item.type),
     );
-    const missing = REQUIRED_DOCUMENTS.filter((type) => !verified.has(type));
+    const missing = REQUIRED_DOCUMENTS.filter((type: any) => !verified.has(type));
     if (missing.length > 0)
       throw new BadRequestException(
         `Unverified required documents: ${missing.join(", ")}`,
       );
     if (
       !vendor.bankAccounts.some(
-        (item) => item.status === VerificationStatus.VERIFIED,
+        (item: any) => item.status === VerificationStatus.VERIFIED,
       )
     )
       throw new BadRequestException("A verified bank account is required");

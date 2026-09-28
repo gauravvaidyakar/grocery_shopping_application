@@ -8,15 +8,17 @@ projects:
             runtime: node
             plan: free
             region: singapore
-            autoDeployTrigger: commit
-            buildCommand: npm ci --include=dev && npm run prisma:generate --workspace @vishwaneed/api && npm run build --workspace @vishwaneed/api
-            startCommand: npm run prisma:deploy --workspace @vishwaneed/api && npm run prisma:seed --workspace @vishwaneed/api && node apps/api/dist/main.js
+            autoDeployTrigger: off
+            buildCommand: npm ci --include=dev && npm run build --workspace @vishwaneed/api
+            startCommand: node apps/api/dist/main.js
             healthCheckPath: /api/v1/categories
             envVars:
               - key: NODE_ENV
                 value: production
-              - key: DATABASE_URL
+              - key: MONGODB_URI
                 sync: false
+              - key: MONGODB_DATABASE
+                value: grocery_web_application
               - key: JWT_ACCESS_SECRET
                 generateValue: true
               - key: JWT_REFRESH_SECRET

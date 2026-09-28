@@ -2,18 +2,21 @@ import { ConflictException } from "@nestjs/common";
 import type { ConfigService } from "@nestjs/config";
 import {
   PaymentMethod,
-  Prisma,
+  MongoData,
   ProductStatus,
   ProductType,
   VendorStatus,
-} from "@prisma/client";
+} from "../src/database/domain.types";
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { CheckoutService } from "../src/checkout/checkout.service";
-import type { PrismaService } from "../src/database/prisma.service";
+import type { MongoDatabaseService } from "../src/database/mongo-database.service";
 import { reserveInventory } from "../src/inventory/reservation-engine";
 import { verifyRazorpaySignature } from "../src/payments/payment-provider";
-import { calculateCommissionAmount } from "../src/orders/orders.service";
+import {
+  calculateCommissionAmount,
+  calculateInclusiveGstBreakdown,
+} from "../src/orders/orders.service";
 import type { ShippingService } from "../src/shipments/shipments.service";
 import { DevelopmentShippingProvider } from "../src/shipments/shipping-provider";
 
@@ -31,13 +34,13 @@ function cartCustomer(
       items: Array.from({ length: vendorCount }, (_, index) => ({
         id: `cart-${index}`,
         quantity: 2,
-        unitPriceSnapshot: new Prisma.Decimal(100 + index),
+        unitPriceSnapshot: new MongoData.Decimal(100 + index),
         product: {
           id: `product-${index}`,
           slug: `product-${index}`,
           name: `Product ${index}`,
-          price: new Prisma.Decimal(100 + index),
-          gstRate: new Prisma.Decimal(5),
+          price: new MongoData.Decimal(100 + index),
+          gstRate: new MongoData.Decimal(5),
           productType: ProductType.RAW_COMMODITY,
           weightGrams: 500,
           status: overrides.productStatus ?? ProductStatus.APPROVED,
@@ -63,10 +66,10 @@ function cartCustomer(
 
 function checkoutHarness(customer: ReturnType<typeof cartCustomer>) {
   const create = vi.fn().mockResolvedValue({ id: "quote-id" });
-  const prisma = {
+  const database = {
     customerProfile: { findUnique: vi.fn().mockResolvedValue(customer) },
     checkoutQuote: { create },
-  } as unknown as PrismaService;
+  } as unknown as MongoDatabaseService;
   const shipping = {
     quote: vi.fn().mockResolvedValue({
       amountMinor: 5000,
@@ -79,7 +82,7 @@ function checkoutHarness(customer: ReturnType<typeof cartCustomer>) {
   const config = {
     get: vi.fn((_key: string, fallback: unknown) => fallback),
   } as unknown as ConfigService;
-  return { service: new CheckoutService(prisma, shipping, config), create };
+  return { service: new CheckoutService(database, shipping, config), create };
 }
 
 describe("multi-vendor checkout", () => {
@@ -152,7 +155,7 @@ describe("multi-vendor checkout", () => {
 
   it("requires explicit acceptance after a price change", async () => {
     const customer = cartCustomer(1);
-    customer.cart.items[0].product.price = new Prisma.Decimal(120);
+    customer.cart.items[0].product.price = new MongoData.Decimal(120);
     const { service } = checkoutHarness(customer);
     await expect(
       service.validate("user-id", "address-id", PaymentMethod.COD),
@@ -166,7 +169,7 @@ describe("inventory concurrency", () => {
     const tx = {
       inventory: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
       inventoryTransaction: { create },
-    } as unknown as Prisma.TransactionClient;
+    } as unknown as MongoData.TransactionClient;
     await expect(
       reserveInventory(
         tx,
@@ -201,5 +204,18 @@ describe("commission calculation", () => {
         7.5,
       ).toString(),
     ).toBe("75");
+  });
+});
+
+describe("GST-inclusive invoice calculation", () => {
+  it("extracts GST without changing the amount charged to the customer", () => {
+    expect(calculateInclusiveGstBreakdown(11800, 18)).toEqual({
+      taxableAmountMinor: 10000,
+      gstAmountMinor: 1800,
+      totalAmountMinor: 11800,
+    });
+    const rounded = calculateInclusiveGstBreakdown(9999, 5);
+    expect(rounded.taxableAmountMinor + rounded.gstAmountMinor).toBe(9999);
+    expect(() => calculateInclusiveGstBreakdown(100, -1)).toThrow(RangeError);
   });
 });

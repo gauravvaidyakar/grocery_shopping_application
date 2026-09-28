@@ -6,8 +6,8 @@ import {
   IsUrl,
   MaxLength,
 } from "class-validator";
-import { ReturnResolution } from "@prisma/client";
-import { ReturnStatus } from "@prisma/client";
+import { ReturnResolution } from "../database/domain.types";
+import { ReturnStatus } from "../database/domain.types";
 export class CreateReturnDto {
   @IsString() @MaxLength(1000) reason!: string;
   @IsEnum(ReturnResolution) resolution!: ReturnResolution;

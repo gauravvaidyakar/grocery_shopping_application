@@ -4,10 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { OrderStatus, ReviewStatus } from "@prisma/client";
-import { PrismaService } from "../database/prisma.service";
+import { OrderStatus, ReviewStatus } from "../database/domain.types";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import type { CreateReviewDto, UpdateReviewDto } from "./reviews.dto";
-import { ComplaintCategory } from "@prisma/client";
+import { ComplaintCategory } from "../database/domain.types";
 import { ConfigService } from "@nestjs/config";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -16,9 +16,9 @@ import { extname, resolve, sep } from "node:path";
 const REVIEW_IMAGE_TYPES = new Map([['image/jpeg', new Set(['.jpg', '.jpeg'])], ['image/png', new Set(['.png'])], ['image/webp', new Set(['.webp'])]]);
 @Injectable()
 export class ReviewsService {
-  constructor(private readonly prisma: PrismaService, private readonly config: ConfigService) {}
+  constructor(private readonly database: MongoDatabaseService, private readonly config: ConfigService) {}
   async create(userId: string, productId: string, input: CreateReviewDto, files: Express.Multer.File[] = []) {
-    const item = await this.prisma.orderItem.findFirst({
+    const item = await this.database.orderItem.findFirst({
       where: {
         id: input.orderItemId,
         productId,
@@ -34,7 +34,7 @@ export class ReviewsService {
     if (item.status !== OrderStatus.DELIVERED)
       throw new BadRequestException("Only delivered products can be reviewed");
     const images = [...(input.imageUrls ?? []), ...(await this.storeImages(files))].slice(0, 3);
-    const review = await this.prisma.review.create({
+    const review = await this.database.review.create({
       data: {
         customerId: item.vendorOrder.masterOrder.customer.id,
         productId,
@@ -48,7 +48,7 @@ export class ReviewsService {
     return this.present(review);
   }
   async public(productId: string) {
-    const reviews = await this.prisma.review.findMany({
+    const reviews = await this.database.review.findMany({
       where: { productId, status: ReviewStatus.PUBLISHED },
       select: {
         id: true,
@@ -60,22 +60,22 @@ export class ReviewsService {
       },
       orderBy: { createdAt: "desc" },
     });
-    return reviews.map((review) => ({
+    return reviews.map((review: any) => ({
       id: review.id,
       rating: review.rating,
       comment: review.comment,
-      images: Array.isArray(review.images) ? review.images.filter((image): image is string => typeof image === "string") : [],
+      images: Array.isArray(review.images) ? review.images.filter((image: unknown): image is string => typeof image === "string") : [],
       customerName: review.customer.firstName,
       submittedAt: review.createdAt.toISOString(),
     }));
   }
 
   async update(userId: string, id: string, input: UpdateReviewDto, files: Express.Multer.File[] = []) {
-    const review = await this.prisma.review.findFirst({ where: { id, customer: { userId } } });
+    const review = await this.database.review.findFirst({ where: { id, customer: { userId } } });
     if (!review) throw new NotFoundException("Review not found");
     const uploaded = await this.storeImages(files);
     const images = uploaded.length ? [...(input.imageUrls ?? []), ...uploaded].slice(0, 3) : (input.imageUrls ?? (Array.isArray(review.images) ? review.images : []));
-    const updated = await this.prisma.review.update({
+    const updated = await this.database.review.update({
       where: { id },
       data: { rating: input.rating, comment: input.comment, images, status: ReviewStatus.PENDING },
     });
@@ -84,17 +84,17 @@ export class ReviewsService {
 
   async report(userId: string, id: string, reason?: string) {
     const [review, reporter] = await Promise.all([
-      this.prisma.review.findUnique({ where: { id }, include: { product: { select: { name: true, vendorId: true } } } }),
-      this.prisma.customerProfile.findUnique({ where: { userId } }),
+      this.database.review.findUnique({ where: { id }, include: { product: { select: { name: true, vendorId: true } } } }),
+      this.database.customerProfile.findUnique({ where: { userId } }),
     ]);
     if (!review || review.status !== ReviewStatus.PUBLISHED) throw new NotFoundException("Published review not found");
     if (!reporter) throw new NotFoundException("Customer not found");
     if (review.customerId === reporter.id) throw new ForbiddenException("You cannot report your own review");
-    const existing = await this.prisma.complaint.findFirst({
+    const existing = await this.database.complaint.findFirst({
       where: { customerId: reporter.id, subject: `Reported review ${review.id}`, status: { not: "CLOSED" } },
     });
     if (existing) return { reported: true, referenceNumber: existing.referenceNumber };
-    const complaint = await this.prisma.complaint.create({
+    const complaint = await this.database.complaint.create({
       data: {
         referenceNumber: `CMP-${Date.now()}-REVIEW`,
         customerId: reporter.id,
@@ -142,14 +142,14 @@ export class ReviewsService {
   }
 
   adminList() {
-    return this.prisma.review.findMany({
+    return this.database.review.findMany({
       include: { customer: true, product: true, orderItem: true },
       orderBy: { createdAt: "desc" },
     });
   }
 
   vendorList(userId: string) {
-    return this.prisma.review.findMany({
+    return this.database.review.findMany({
       where: { product: { vendor: { userId } } },
       select: {
         id: true, rating: true, comment: true, status: true, createdAt: true,
@@ -166,7 +166,7 @@ export class ReviewsService {
         "Moderation must publish or reject a review",
       );
     }
-    return this.prisma.review.update({ where: { id }, data: { status } });
+    return this.database.review.update({ where: { id }, data: { status } });
   }
 
   private present(review: {

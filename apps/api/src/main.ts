@@ -19,7 +19,7 @@ async function bootstrap(): Promise<void> {
     origin: config
       .getOrThrow<string>("CORS_ORIGINS")
       .split(",")
-      .map((origin) => origin.trim()),
+      .map((origin: any) => origin.trim()),
     credentials: true,
   });
   app.useGlobalPipes(

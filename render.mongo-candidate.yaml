@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: grocery-web-application-api-candidate
+    runtime: node
+    plan: free
+    region: singapore
+    autoDeployTrigger: off
+    buildCommand: npm ci --include=dev && npm run build --workspace @vishwaneed/api
+    startCommand: node apps/api/dist/main.js
+    healthCheckPath: /api/v1/categories
+    envVars:
+      - key: NODE_ENV
+        value: staging
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: grocery_web_application
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: BANK_DATA_ENCRYPTION_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: CUSTOMER_WEB_URL
+        sync: false

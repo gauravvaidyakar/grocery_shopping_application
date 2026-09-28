@@ -9,7 +9,7 @@ import {
   Max,
   Min,
 } from "class-validator";
-import { ProductType } from "@prisma/client";
+import { ProductType } from "../database/domain.types";
 export class CommissionRuleDto {
   @IsOptional() @IsUUID() categoryId?: string;
   @IsOptional() @IsEnum(ProductType) productType?: ProductType;

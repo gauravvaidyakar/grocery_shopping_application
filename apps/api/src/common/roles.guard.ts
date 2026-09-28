@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
-import type { Role } from "@prisma/client";
+import type { Role } from "../database/domain.types";
 import type { Request } from "express";
 import { ROLES_KEY } from "./roles.decorator";
 import type { RequestUser } from "./request-user";

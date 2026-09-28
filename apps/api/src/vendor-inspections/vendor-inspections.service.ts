@@ -3,8 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { InspectionStatus, Prisma, VendorStatus } from "@prisma/client";
-import { PrismaService } from "../database/prisma.service";
+import { InspectionStatus, MongoData, VendorStatus } from "../database/domain.types";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { VendorsService } from "../vendors/vendors.service";
 import type {
   CreateInspectionDto,
@@ -32,7 +32,7 @@ const ALLOWED_TRANSITIONS: Record<InspectionStatus, InspectionStatus[]> = {
 @Injectable()
 export class VendorInspectionsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly vendors: VendorsService,
   ) {}
   async create(
@@ -41,7 +41,7 @@ export class VendorInspectionsService {
     input: CreateInspectionDto,
   ) {
     await this.vendors.assertKycVerified(vendorId);
-    const vendor = await this.prisma.vendor.findUnique({
+    const vendor = await this.database.vendor.findUnique({
       where: { id: vendorId },
       select: { status: true },
     });
@@ -54,7 +54,7 @@ export class VendorInspectionsService {
       throw new BadRequestException(
         "Inspection can only be scheduled after KYC verification",
       );
-    const activeInspection = await this.prisma.vendorInspection.findFirst({
+    const activeInspection = await this.database.vendorInspection.findFirst({
       where: {
         vendorId,
         status: {
@@ -71,13 +71,13 @@ export class VendorInspectionsService {
       throw new BadRequestException(
         "An inspection is already scheduled or in progress",
       );
-    const inspection = await this.prisma.vendorInspection.create({
+    const inspection = await this.database.vendorInspection.create({
       data: {
         vendorId,
         inspectorId,
         scheduledAt: new Date(input.scheduledAt),
         location: input.location,
-        checklist: input.checklist as Prisma.InputJsonValue,
+        checklist: input.checklist as MongoData.InputJsonValue,
       },
     });
     await this.vendors.transition(
@@ -89,17 +89,17 @@ export class VendorInspectionsService {
     return inspection;
   }
   list(vendorId: string) {
-    return this.prisma.vendorInspection.findMany({
+    return this.database.vendorInspection.findMany({
       where: { vendorId },
       orderBy: { scheduledAt: "desc" },
     });
   }
   async update(id: string, actorId: string, input: UpdateInspectionDto) {
-    const current = await this.prisma.vendorInspection.findUnique({
+    const current = await this.database.vendorInspection.findUnique({
       where: { id },
     });
     if (!current) throw new NotFoundException("Inspection not found");
-    if (!ALLOWED_TRANSITIONS[current.status].includes(input.status))
+    if (!ALLOWED_TRANSITIONS[current.status as InspectionStatus].includes(input.status))
       throw new BadRequestException(
         `Inspection cannot move from ${current.status} to ${input.status}`,
       );
@@ -130,7 +130,7 @@ export class VendorInspectionsService {
       throw new BadRequestException(
         "Documents, premises and quality must all be verified to pass inspection",
       );
-    const updated = await this.prisma.vendorInspection.update({
+    const updated = await this.database.vendorInspection.update({
       where: { id },
       data: {
         status: input.status,
@@ -138,7 +138,7 @@ export class VendorInspectionsService {
           ? new Date(input.scheduledAt)
           : undefined,
         location: input.location?.trim() || undefined,
-        checklist: input.checklist as Prisma.InputJsonValue | undefined,
+        checklist: input.checklist as MongoData.InputJsonValue,
         inspectedAt: input.inspectedAt
           ? new Date(input.inspectedAt)
           : input.status === InspectionStatus.PASSED ||
@@ -151,7 +151,7 @@ export class VendorInspectionsService {
         documentsVerified: input.documentsVerified,
         premisesVerified: input.premisesVerified,
         qualityVerified: input.qualityVerified,
-        evidence: input.evidence as Prisma.InputJsonValue | undefined,
+        evidence: input.evidence as MongoData.InputJsonValue,
       },
     });
     if (input.status === InspectionStatus.PASSED)
@@ -161,7 +161,7 @@ export class VendorInspectionsService {
         VendorStatus.PENDING,
         "Physical inspection passed; awaiting final approval",
       );
-    await this.prisma.auditLog.create({
+    await this.database.auditLog.create({
       data: {
         actorId,
         action: "VENDOR_INSPECTION_UPDATED",

@@ -1,5 +1,5 @@
 import { IsEnum, IsString, IsUUID, MaxLength } from "class-validator";
-import { OrderStatus, PaymentMethod } from "@prisma/client";
+import { OrderStatus, PaymentMethod } from "../database/domain.types";
 export class CreateOrderDto {
   @IsUUID() quoteId!: string;
   @IsUUID() addressId!: string;

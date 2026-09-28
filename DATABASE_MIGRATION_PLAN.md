@@ -21,8 +21,8 @@ The deployed API currently runs commit `d787af8` and receives a PostgreSQL
 documentation and must never be executed against MongoDB or reapplied to the
 production PostgreSQL database.
 
-The API is a NestJS modular monolith. Domain services use `PrismaService`
-directly for authentication, customers, vendors, catalogue, inventory, cart,
+The legacy deployed API is a NestJS modular monolith whose domain services use
+`PrismaService` for authentication, customers, vendors, catalogue, inventory, cart,
 checkout, orders, payments, shipments, commission, ledger, settlements,
 refunds, returns, replacements, reviews, complaints, notifications, audit logs,
 and integration settings. Multi-document transactions protect order placement,
@@ -31,7 +31,7 @@ returns, shipments, and settlement processing.
 
 ## MongoDB architecture
 
-The new persistence layer uses MongoDB Atlas through Prisma's MongoDB connector.
+The new persistence layer uses MongoDB Atlas through Mongoose.
 It is a deliberate hybrid document/reference model:
 
 - Mutable, independently queried business entities remain separate collections
@@ -87,9 +87,9 @@ It is a deliberate hybrid document/reference model:
   may be needed for audit; scheduled cleanup can be added after a retention
   policy is approved.
 
-The authoritative index declarations live beside the collections in
-`apps/api/prisma/schema.prisma` and are applied with `prisma db push` only to the
-new MongoDB database.
+The authoritative collection and index declarations live in
+`apps/api/src/database/mongo.schemas.ts` and are applied with
+`npm run mongodb:setup --workspace @vishwaneed/api` only to the new MongoDB database.
 
 ## Preserved business rules
 
@@ -108,9 +108,10 @@ new MongoDB database.
 
 ## Environment and credential rules
 
-- `DATABASE_URL` is backend-only and must be an Atlas `mongodb+srv://` (or local
+- `MONGODB_URI` is backend-only and must be an Atlas `mongodb+srv://` (or local
   development `mongodb://`) connection string selecting the
   `grocery_web_application` database.
+- `MONGODB_DATABASE` must be exactly `grocery_web_application`.
 - Production startup rejects non-MongoDB URLs, any other database name, and any
   username other than the dedicated `grocery_web_application` database user.
 - The Atlas-admin database user is never used by application code.
@@ -156,6 +157,6 @@ application, seed idempotency, API startup, customer registration/login and OTP,
 vendor/KYC/inspection data, catalogue, inventory, cart, order/vendor-order
 creation, commission, settlement, payments, shipment tracking, refunds/returns/
 replacements, and all customer/vendor/admin APIs. The repository must also pass
-Prisma validation/generation, lint, typecheck, automated tests, and production
+MongoDB integration tests, lint, typecheck, automated tests, and production
 builds. Real payments, shipments, SMS, or WhatsApp messages require separately
 approved provider-side smoke tests.

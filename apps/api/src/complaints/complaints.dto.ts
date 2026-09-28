@@ -7,7 +7,7 @@ import {
   IsUUID,
   MaxLength,
 } from "class-validator";
-import { ComplaintCategory, ComplaintStatus } from "@prisma/client";
+import { ComplaintCategory, ComplaintStatus } from "../database/domain.types";
 export class CreateComplaintDto {
   @IsString() @MaxLength(200) subject!: string;
   @IsEnum(ComplaintCategory) category!: ComplaintCategory;

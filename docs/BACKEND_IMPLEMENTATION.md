@@ -2,7 +2,10 @@
 
 ## Architecture
 
-The backend is a NestJS modular monolith in `apps/api`. It uses MongoDB, Prisma, DTO validation, JWT access/refresh tokens, RBAC, a standard response envelope, centralized exception handling, private document storage, Swagger, and audit logs.
+The backend is a NestJS modular monolith in `apps/api`. It uses MongoDB through
+Mongoose, DTO validation, JWT access/refresh tokens, RBAC, a standard response
+envelope, centralized exception handling, private document storage, Swagger,
+and audit logs.
 
 Modules are separated for authentication, users, customers, addresses, vendors, vendor documents, inspections, categories, products, inventory, cart, orders, payments, shipments, commission, ledger, settlements, refunds, returns, replacements, reviews, complaints, notifications, and admin operations.
 

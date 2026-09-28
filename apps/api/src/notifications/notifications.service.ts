@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { NotificationStatus, Prisma } from "@prisma/client";
-import { PrismaService } from "../database/prisma.service";
+import { NotificationStatus, MongoData } from "../database/domain.types";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { WhatsAppProviderRouter } from "./whatsapp-provider";
 import { SmsProviderRouter } from "./sms-provider";
 
@@ -10,14 +10,14 @@ export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly whatsapp: WhatsAppProviderRouter,
     private readonly config: ConfigService,
     private readonly sms: SmsProviderRouter,
   ) {}
 
   list(userId: string) {
-    return this.prisma.notification.findMany({
+    return this.database.notification.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
     });
@@ -34,12 +34,12 @@ export class NotificationsService {
     try {
       let existing;
       if (dedupeKey) {
-        existing = await this.prisma.notification.findUnique({
+        existing = await this.database.notification.findUnique({
           where: { dedupeKey },
         });
         if (existing?.status === NotificationStatus.SENT) return existing;
       }
-      const user = await this.prisma.user.findUnique({
+      const user = await this.database.user.findUnique({
         where: { id: userId },
         include: { vendor: { select: { businessMobile: true } } },
       });
@@ -50,7 +50,7 @@ export class NotificationsService {
         dedupeKey,
         channel: "WHATSAPP",
         templateKey,
-        payload: payload as Prisma.InputJsonValue,
+        payload: payload as MongoData.InputJsonValue,
         status: recipient
           ? NotificationStatus.QUEUED
           : NotificationStatus.FAILED,
@@ -59,11 +59,11 @@ export class NotificationsService {
           : "No mobile number is configured for this account",
       };
       const notification = existing
-        ? await this.prisma.notification.update({
+        ? await this.database.notification.update({
             where: { id: existing.id },
             data: notificationData,
           })
-        : await this.prisma.notification.create({ data: notificationData });
+        : await this.database.notification.create({ data: notificationData });
       notificationId = notification.id;
       if (!recipient) return notification;
       const providerTemplate = this.config.get<string>(
@@ -75,7 +75,7 @@ export class NotificationsService {
         recipient,
         deliveryPayload,
       );
-      return this.prisma.notification.update({
+      return this.database.notification.update({
         where: { id: notification.id },
         data: {
           status: NotificationStatus.SENT,
@@ -87,7 +87,7 @@ export class NotificationsService {
       const message = error instanceof Error ? error.message : "Notification failed";
       this.logger.error(`WhatsApp notification ${templateKey} failed: ${message}`);
       if (notificationId || dedupeKey) {
-        await this.prisma.notification.updateMany({
+        await this.database.notification.updateMany({
           where: notificationId ? { id: notificationId } : { dedupeKey },
           data: { status: NotificationStatus.FAILED, failureReason: message },
         }).catch(() => undefined);
@@ -104,18 +104,18 @@ export class NotificationsService {
   ) {
     let notificationId: string | undefined;
     try {
-      const user = await this.prisma.user.findUnique({
+      const user = await this.database.user.findUnique({
         where: { id: userId },
         select: { mobile: true },
       });
       if (!user) return null;
       const recipient = user.mobile;
-      const notification = await this.prisma.notification.create({
+      const notification = await this.database.notification.create({
         data: {
           userId,
           channel: "SMS",
           templateKey,
-          payload: payload as Prisma.InputJsonValue,
+          payload: payload as MongoData.InputJsonValue,
           status: recipient
             ? NotificationStatus.QUEUED
             : NotificationStatus.FAILED,
@@ -131,7 +131,7 @@ export class NotificationsService {
         otp: delivery.otp,
         expiresInMinutes: delivery.expiresInMinutes,
       });
-      return this.prisma.notification.update({
+      return this.database.notification.update({
         where: { id: notification.id },
         data: {
           status: NotificationStatus.SENT,
@@ -144,7 +144,7 @@ export class NotificationsService {
       const messageText = "SMS provider delivery failed";
       this.logger.error(`SMS notification ${templateKey} failed (${diagnostic})`);
       if (notificationId) {
-        await this.prisma.notification.updateMany({
+        await this.database.notification.updateMany({
           where: { id: notificationId },
           data: { status: NotificationStatus.FAILED, failureReason: messageText },
         }).catch(() => undefined);
@@ -154,7 +154,7 @@ export class NotificationsService {
   }
 
   async notifyOrderPlaced(masterOrderId: string): Promise<void> {
-    const order = await this.prisma.masterOrder.findUnique({
+    const order = await this.database.masterOrder.findUnique({
       where: { id: masterOrderId },
       include: {
         customer: { select: { userId: true } },
@@ -179,7 +179,7 @@ export class NotificationsService {
         },
         `order:${order.id}:customer:placed`,
       ),
-      ...order.vendorOrders.map((vendorOrder) =>
+      ...order.vendorOrders.map((vendorOrder: any) =>
         this.sendWhatsApp(
           vendorOrder.vendor.userId,
           "vendor_new_order",
@@ -232,7 +232,7 @@ export class NotificationsService {
     itemId: string,
     changedBy: "CUSTOMER" | "VENDOR",
   ): Promise<void> {
-    const item = await this.prisma.orderItem.findUnique({
+    const item = await this.database.orderItem.findUnique({
       where: { id: itemId },
       include: {
         vendorOrder: {
@@ -270,7 +270,7 @@ export class NotificationsService {
   }
 
   async notifyPaymentStatus(masterOrderId: string, status: string): Promise<void> {
-    const order = await this.prisma.masterOrder.findUnique({
+    const order = await this.database.masterOrder.findUnique({
       where: { id: masterOrderId },
       include: {
         customer: { select: { userId: true } },
@@ -286,7 +286,7 @@ export class NotificationsService {
     };
     await Promise.allSettled([
       this.sendWhatsApp(order.customer.userId, template, payload, `order:${order.id}:customer:payment:${status}`),
-      ...order.vendorOrders.map((vendorOrder) =>
+      ...order.vendorOrders.map((vendorOrder: any) =>
         this.sendWhatsApp(
           vendorOrder.vendor.userId,
           "vendor_payment_status",
@@ -332,7 +332,7 @@ export class NotificationsService {
     returnRequestId: string,
     status: string,
   ): Promise<void> {
-    const request = await this.prisma.returnRequest.findUnique({
+    const request = await this.database.returnRequest.findUnique({
       where: { id: returnRequestId },
       include: {
         customer: { select: { userId: true } },
@@ -372,7 +372,7 @@ export class NotificationsService {
   }
 
   async notifyComplaintStatus(complaintId: string, event: string): Promise<void> {
-    const complaint = await this.prisma.complaint.findUnique({
+    const complaint = await this.database.complaint.findUnique({
       where: { id: complaintId },
       include: {
         customer: { select: { userId: true } },
@@ -405,7 +405,7 @@ export class NotificationsService {
   }
 
   async notifyRefundStatus(refundId: string): Promise<void> {
-    const refund = await this.prisma.refund.findUnique({
+    const refund = await this.database.refund.findUnique({
       where: { id: refundId },
       include: {
         masterOrder: { include: { customer: { select: { userId: true } } } },
@@ -438,7 +438,7 @@ export class NotificationsService {
   }
 
   private orderRecipients(vendorOrderId: string) {
-    return this.prisma.vendorOrder.findUnique({
+    return this.database.vendorOrder.findUnique({
       where: { id: vendorOrderId },
       include: {
         vendor: { select: { userId: true, businessName: true } },

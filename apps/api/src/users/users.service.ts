@@ -1,10 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: MongoDatabaseService) {}
   async safeById(id: string) {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.database.user.findUnique({
       where: { id },
       select: {
         id: true,

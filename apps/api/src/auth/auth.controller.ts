@@ -7,7 +7,7 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiTags } from "@nestjs/swagger";
-import { Role } from "@prisma/client";
+import { Role } from "../database/domain.types";
 import { CurrentUser } from "../common/current-user.decorator";
 import type { RequestUser } from "../common/request-user";
 import { Roles } from "../common/roles.decorator";

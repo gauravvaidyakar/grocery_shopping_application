@@ -1,4 +1,4 @@
-import { PaymentMethod } from "@prisma/client";
+import { PaymentMethod } from "../database/domain.types";
 import { IsEnum, IsUUID } from "class-validator";
 export class ValidateCheckoutDto {
   @IsUUID() addressId!: string;

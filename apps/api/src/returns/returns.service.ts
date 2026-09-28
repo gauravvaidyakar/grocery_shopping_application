@@ -8,15 +8,15 @@ import {
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
-  Prisma,
+  MongoData,
   RefundMethod,
   ReturnResolution,
   ReturnStatus,
-} from "@prisma/client";
+} from "../database/domain.types";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { VendorsService } from "../vendors/vendors.service";
 import type { CreateReturnDto } from "./returns.dto";
@@ -30,7 +30,7 @@ const EVIDENCE_MIME = new Map([
 @Injectable()
 export class ReturnsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly config: ConfigService,
     private readonly vendors: VendorsService,
     private readonly notifications: NotificationsService,
@@ -42,7 +42,7 @@ export class ReturnsService {
     input: CreateReturnDto,
     files: Express.Multer.File[] = [],
   ) {
-    const item = await this.prisma.orderItem.findFirst({
+    const item = await this.database.orderItem.findFirst({
       where: {
         id: itemId,
         vendorOrder: { masterOrder: { id: orderId, customer: { userId } } },
@@ -58,11 +58,11 @@ export class ReturnsService {
     );
     if (new Date() > deadline)
       throw new BadRequestException("Return window has expired");
-    const customer = await this.prisma.customerProfile.findUniqueOrThrow({
+    const customer = await this.database.customerProfile.findUniqueOrThrow({
       where: { userId },
     });
     const evidence = await this.storeEvidence(customer.id, files);
-    const request = await this.prisma.$transaction(async (tx) => {
+    const request = await this.database.transaction(async (tx: any) => {
       const request = await tx.returnRequest.create({
         data: {
           orderItemId: item.id,
@@ -124,16 +124,16 @@ export class ReturnsService {
     return stored;
   }
   async list(userId: string) {
-    const requests = await this.prisma.returnRequest.findMany({
+    const requests = await this.database.returnRequest.findMany({
       where: { customer: { userId } },
       include: { orderItem: { include: { product: true } } },
       orderBy: { requestedAt: "desc" },
     });
-    return requests.map((request) => this.presentReturn(request));
+    return requests.map((request: any) => this.presentReturn(request));
   }
 
   adminList() {
-    return this.prisma.returnRequest.findMany({
+    return this.database.returnRequest.findMany({
       include: {
         customer: true,
         orderItem: { include: { product: true, vendorOrder: true } },
@@ -143,7 +143,7 @@ export class ReturnsService {
   }
 
   async vendorList(userId: string) {
-    return this.prisma.returnRequest.findMany({
+    return this.database.returnRequest.findMany({
       where: { orderItem: { vendorOrder: { vendorId: await this.vendors.getVendorId(userId) } } },
       include: { orderItem: { include: { product: true, vendorOrder: true, replacement: true } } },
       orderBy: { requestedAt: "desc" },
@@ -151,7 +151,7 @@ export class ReturnsService {
   }
 
   async updateStatus(id: string, status: ReturnStatus) {
-    const request = await this.prisma.returnRequest.findUniqueOrThrow({
+    const request = await this.database.returnRequest.findUniqueOrThrow({
       where: { id },
       include: {
         orderItem: {
@@ -171,12 +171,12 @@ export class ReturnsService {
       RECEIVED: [ReturnStatus.RESOLVED],
       RESOLVED: [],
     };
-    if (!transitions[request.status].includes(status)) {
+    if (!transitions[request.status as ReturnStatus].includes(status)) {
       throw new BadRequestException(
         `Return cannot move from ${request.status} to ${status}`,
       );
     }
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.database.transaction(async (tx: any) => {
       if (status === ReturnStatus.REJECTED) {
         await tx.orderItem.update({
           where: { id: request.orderItemId },
@@ -201,7 +201,7 @@ export class ReturnsService {
         } else {
           const payment =
             request.orderItem.vendorOrder.masterOrder.payments.find(
-              (candidate) =>
+              (candidate: any) =>
                 candidate.status === PaymentStatus.PAID ||
                 candidate.method === PaymentMethod.COD,
             );
@@ -267,7 +267,7 @@ export class ReturnsService {
     reason: string;
     status: ReturnStatus;
     requestedAt: Date;
-    evidence: Prisma.JsonValue;
+    evidence: MongoData.JsonValue;
   }) {
     const evidence = Array.isArray(request.evidence) ? request.evidence : [];
     return {
@@ -276,7 +276,7 @@ export class ReturnsService {
       reason: request.reason,
       status: request.status,
       requestedAt: request.requestedAt.toISOString(),
-      attachmentNames: evidence.flatMap((entry) => {
+      attachmentNames: evidence.flatMap((entry: any) => {
         if (typeof entry === "string") return [entry];
         if (
           entry &&

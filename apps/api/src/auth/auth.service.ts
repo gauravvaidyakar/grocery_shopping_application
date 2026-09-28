@@ -13,15 +13,15 @@ import { ConfigService } from "@nestjs/config";
 import { JwtService, type JwtSignOptions } from "@nestjs/jwt";
 import {
   NotificationStatus,
-  Prisma,
+  MongoData,
   Role,
   UserStatus,
   VerificationOtpPurpose,
   type User,
-} from "@prisma/client";
+} from "../database/domain.types";
 import { compare, hash } from "bcryptjs";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import type {
   ForgotPasswordDto,
@@ -37,6 +37,8 @@ import { CustomerOtpProvider } from "./customer-otp-provider";
 interface Tokens {
   accessToken: string;
   refreshToken: string;
+  sessionId: string;
+  refreshExpiresAt: Date;
 }
 
 interface OtpChallengePayload {
@@ -47,7 +49,7 @@ interface OtpChallengePayload {
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     @Optional() private readonly notifications?: NotificationsService,
@@ -66,7 +68,7 @@ export class AuthService {
       throw new BadRequestException(
         "A valid 6-digit vendor pickup pincode is required",
       );
-    const exists = await this.prisma.user.findFirst({
+    const exists = await this.database.user.findFirst({
       where: {
         OR: [
           input.email ? { email: input.email.toLowerCase() } : {},
@@ -79,7 +81,7 @@ export class AuthService {
         "An account already exists for this email or mobile",
       );
     const passwordHash = await hash(input.password, 12);
-    const user = await this.prisma.$transaction(async (tx) => {
+    const user = await this.database.transaction(async (tx: any) => {
       const created = await tx.user.create({
         data: {
           email: input.email?.toLowerCase(),
@@ -104,7 +106,7 @@ export class AuthService {
             userId: created.id,
             businessName: input.businessName!,
             ownerName: input.ownerName!,
-            businessAddress: input.businessAddress as Prisma.InputJsonValue,
+            businessAddress: input.businessAddress as MongoData.InputJsonValue,
             pickupPincode,
             statusHistory: {
               create: {
@@ -127,7 +129,7 @@ export class AuthService {
 
   async login(input: LoginDto): Promise<Record<string, unknown>> {
     const identifier = input.emailOrMobile.trim();
-    const user = await this.prisma.user.findFirst({
+    const user = await this.database.user.findFirst({
       where: {
         OR: [{ email: identifier.toLowerCase() }, { mobile: identifier }],
       },
@@ -142,7 +144,7 @@ export class AuthService {
         VerificationOtpPurpose.ACCOUNT_VERIFICATION,
       );
     }
-    await this.prisma.user.update({
+    await this.database.user.update({
       where: { id: user.id },
       data: { lastLoginAt: new Date() },
     });
@@ -150,7 +152,7 @@ export class AuthService {
   }
 
   async refresh(input: RefreshDto): Promise<Record<string, unknown>> {
-    let payload: { sub: string; type: string };
+    let payload: { sub: string; type: string; jti?: string };
     try {
       payload = await this.jwt.verifyAsync(input.refreshToken, {
         secret: this.config.getOrThrow<string>("JWT_REFRESH_SECRET"),
@@ -160,22 +162,25 @@ export class AuthService {
     }
     if (payload.type !== "refresh")
       throw new UnauthorizedException("Invalid refresh token");
-    const user = await this.prisma.user.findUnique({
+    const session = payload.jti
+      ? await this.database.session.findFirst({
+          where: { id: payload.jti, userId: payload.sub, revokedAt: null, expiresAt: { gt: new Date() } },
+        })
+      : null;
+    const user = await this.database.user.findUnique({
       where: { id: payload.sub },
     });
     if (
-      !user?.refreshTokenHash ||
-      !(await compare(input.refreshToken, user.refreshTokenHash))
+      !user || !session ||
+      !(await compare(input.refreshToken, session.tokenHash))
     )
       throw new UnauthorizedException("Refresh token has been revoked");
+    await this.database.session.update({ where: { id: session.id }, data: { revokedAt: new Date(), lastUsedAt: new Date() } });
     return this.createSession(user);
   }
 
   async logout(userId: string): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshTokenHash: null },
-    });
+    await this.database.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } });
   }
 
   async forgotPassword(
@@ -185,7 +190,7 @@ export class AuthService {
     const genericResponse: Record<string, unknown> = {
       message: "If the account exists, reset instructions will be sent securely.",
     };
-    const user = await this.prisma.user.findFirst({
+    const user = await this.database.user.findFirst({
       where: {
         OR: [{ email: identifier.toLowerCase() }, { mobile: identifier }],
       },
@@ -230,14 +235,14 @@ export class AuthService {
       Number(this.config.get<string>("PASSWORD_RESET_TTL_MINUTES", "30")),
     );
     const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
-    await this.prisma.$transaction([
-      this.prisma.passwordResetToken.deleteMany({
+    await this.database.transaction(async (tx: any) => {
+      await tx.passwordResetToken.deleteMany({
         where: { userId: user.id },
-      }),
-      this.prisma.passwordResetToken.create({
+      });
+      await tx.passwordResetToken.create({
         data: { userId: user.id, tokenHash, expiresAt },
-      }),
-    ]);
+      });
+    });
 
     const resetBaseUrl =
       user.role === Role.VENDOR
@@ -257,7 +262,7 @@ export class AuthService {
 
   async resetPassword(input: ResetPasswordDto): Promise<{ message: string }> {
     const tokenHash = createHash("sha256").update(input.token).digest("hex");
-    const resetToken = await this.prisma.passwordResetToken.findUnique({
+    const resetToken = await this.database.passwordResetToken.findUnique({
       where: { tokenHash },
     });
     if (
@@ -268,23 +273,24 @@ export class AuthService {
       throw new BadRequestException("Reset link is invalid or has expired");
     }
     const passwordHash = await hash(input.password, 12);
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.database.transaction(async (tx: any) => {
+      await tx.user.update({
         where: { id: resetToken.userId },
         data: { passwordHash, refreshTokenHash: null },
-      }),
-      this.prisma.passwordResetToken.updateMany({
+      });
+      await tx.passwordResetToken.updateMany({
         where: { userId: resetToken.userId, usedAt: null },
         data: { usedAt: new Date() },
-      }),
-    ]);
+      });
+      if (tx.session) await tx.session.updateMany({ where: { userId: resetToken.userId, revokedAt: null }, data: { revokedAt: new Date() } });
+    });
     return { message: "Password updated successfully" };
   }
 
   async requestVerificationOtp(
     userId: string,
   ): Promise<Record<string, unknown>> {
-    const user = await this.prisma.user.findUnique({
+    const user = await this.database.user.findUnique({
       where: { id: userId },
       include: { vendor: { select: { businessMobile: true } } },
     });
@@ -315,7 +321,7 @@ export class AuthService {
       input.code,
     );
     const verifiedAt = new Date();
-    await this.prisma.$transaction(async (tx) => {
+    await this.database.transaction(async (tx: any) => {
       const consumed = await tx.verificationOtp.updateMany({
         where: { id: challenge.id, consumedAt: null },
         data: { consumedAt: verifiedAt },
@@ -336,7 +342,7 @@ export class AuthService {
     const purpose = payload.type === "customer_password_reset"
       ? VerificationOtpPurpose.PASSWORD_RESET
       : VerificationOtpPurpose.ACCOUNT_VERIFICATION;
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    const user = await this.database.user.findUnique({ where: { id: payload.sub } });
     if (!user || user.role !== Role.CUSTOMER || user.status !== UserStatus.ACTIVE) {
       throw new BadRequestException("Verification request is invalid or expired");
     }
@@ -356,13 +362,13 @@ export class AuthService {
 
   async verifyCustomerAccountOtp(challengeToken: string, accessToken: string) {
     const payload = await this.verifyOtpChallenge(challengeToken, "customer_account_verification");
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    const user = await this.database.user.findUnique({ where: { id: payload.sub } });
     if (!user || user.role !== Role.CUSTOMER || user.status !== UserStatus.ACTIVE) {
       throw new BadRequestException("Verification code is invalid or expired");
     }
     await this.verifyCustomerOtpAccessToken(user, accessToken);
     const verifiedAt = new Date();
-    await this.prisma.user.update({
+    await this.database.user.update({
       where: { id: user.id },
       data: { mobileVerifiedAt: verifiedAt, lastLoginAt: verifiedAt },
     });
@@ -371,7 +377,7 @@ export class AuthService {
 
   async verifyPasswordResetOtp(challengeToken: string, accessToken: string) {
     const payload = await this.verifyOtpChallenge(challengeToken, "customer_password_reset");
-    const user = await this.prisma.user.findUnique({ where: { id: payload.sub } });
+    const user = await this.database.user.findUnique({ where: { id: payload.sub } });
     if (!user || user.role !== Role.CUSTOMER || user.status !== UserStatus.ACTIVE) {
       throw new BadRequestException("Verification code is invalid or expired");
     }
@@ -379,7 +385,7 @@ export class AuthService {
     const token = randomBytes(32).toString("hex");
     const tokenHash = createHash("sha256").update(token).digest("hex");
     const expiresAt = new Date(Date.now() + 15 * 60_000);
-    await this.prisma.$transaction(async (tx) => {
+    await this.database.transaction(async (tx: any) => {
       await tx.passwordResetToken.updateMany({
         where: { userId: user.id, usedAt: null },
         data: { usedAt: new Date() },
@@ -401,7 +407,7 @@ export class AuthService {
         "New password must be different from the current password",
       );
     }
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.database.user.findUnique({ where: { id: userId } });
     if (!user || user.role !== Role.VENDOR) {
       throw new ForbiddenException("Vendor account access is required");
     }
@@ -410,16 +416,17 @@ export class AuthService {
     }
 
     const passwordHash = await hash(input.newPassword, 12);
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.database.transaction(async (tx: any) => {
+      await tx.user.update({
         where: { id: user.id },
         data: { passwordHash, refreshTokenHash: null },
-      }),
-      this.prisma.passwordResetToken.updateMany({
+      });
+      await tx.passwordResetToken.updateMany({
         where: { userId: user.id, usedAt: null },
         data: { usedAt: new Date() },
-      }),
-    ]);
+      });
+      if (tx.session) await tx.session.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    });
     return {
       message: "Password changed successfully. Please sign in again.",
       requiresReauthentication: true,
@@ -470,7 +477,7 @@ export class AuthService {
       );
     }
     const cooldownSeconds = this.otpCooldownSeconds();
-    const latest = await this.prisma.verificationOtp.findFirst({
+    const latest = await this.database.verificationOtp.findFirst({
       where: { userId: user.id, purpose, consumedAt: null },
       orderBy: { createdAt: "desc" },
       select: { createdAt: true },
@@ -489,14 +496,14 @@ export class AuthService {
     const codeHash = await hash(code, 12);
     const ttlMinutes = Math.max(5, Number(this.config.get<string>("OTP_TTL_MINUTES", "5")));
     const expiresAt = new Date(Date.now() + ttlMinutes * 60_000);
-    await this.prisma.$transaction([
-      this.prisma.verificationOtp.deleteMany({
+    await this.database.transaction(async (tx: any) => {
+      await tx.verificationOtp.deleteMany({
         where: { userId: user.id, purpose, consumedAt: null },
-      }),
-      this.prisma.verificationOtp.create({
+      });
+      await tx.verificationOtp.create({
         data: { userId: user.id, purpose, codeHash, expiresAt },
-      }),
-    ]);
+      });
+    });
     const template = purpose === VerificationOtpPurpose.PASSWORD_RESET
       ? "password_reset_otp"
       : "customer_registration_otp";
@@ -507,7 +514,7 @@ export class AuthService {
       { otp: code, expiresInMinutes: ttlMinutes },
     );
     if (!delivery || delivery.status !== NotificationStatus.SENT) {
-      await this.prisma.verificationOtp.deleteMany({
+      await this.database.verificationOtp.deleteMany({
         where: { userId: user.id, purpose, consumedAt: null },
       });
       throw new ServiceUnavailableException(
@@ -525,7 +532,7 @@ export class AuthService {
     purpose: VerificationOtpPurpose,
     code: string,
   ) {
-    const challenge = await this.prisma.verificationOtp.findFirst({
+    const challenge = await this.database.verificationOtp.findFirst({
       where: { userId, purpose, consumedAt: null },
       orderBy: { createdAt: "desc" },
     });
@@ -533,7 +540,7 @@ export class AuthService {
       throw new BadRequestException("Verification code is invalid or expired");
     }
     if (!(await compare(code, challenge.codeHash))) {
-      await this.prisma.verificationOtp.update({
+      await this.database.verificationOtp.update({
         where: { id: challenge.id },
         data: { attempts: { increment: 1 } },
       });
@@ -591,12 +598,22 @@ export class AuthService {
 
   private async createSession(user: User): Promise<Record<string, unknown>> {
     const tokens = await this.issueTokens(user);
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { refreshTokenHash: await hash(tokens.refreshToken, 12) },
-    });
+    if (this.database.session) {
+      await this.database.session.create({
+        data: {
+          id: tokens.sessionId,
+          userId: user.id,
+          tokenHash: await hash(tokens.refreshToken, 12),
+          expiresAt: tokens.refreshExpiresAt,
+          lastUsedAt: new Date(),
+        },
+      });
+    } else {
+      await this.database.user.update({ where: { id: user.id }, data: { refreshTokenHash: await hash(tokens.refreshToken, 12) } });
+    }
+    const publicTokens = { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken };
     if (user.role === Role.CUSTOMER) {
-      const profile = await this.prisma.customerProfile.findUniqueOrThrow({
+      const profile = await this.database.customerProfile.findUniqueOrThrow({
         where: { userId: user.id },
       });
       return {
@@ -608,7 +625,7 @@ export class AuthService {
           mobileVerified: Boolean(user.mobileVerifiedAt),
           role: Role.CUSTOMER,
         },
-        ...tokens,
+        ...publicTokens,
       };
     }
     return {
@@ -619,11 +636,12 @@ export class AuthService {
         mobileVerified: Boolean(user.mobileVerifiedAt),
         role: user.role,
       },
-      ...tokens,
+      ...publicTokens,
     };
   }
 
   private async issueTokens(user: User): Promise<Tokens> {
+    const sessionId = randomUUID();
     const accessOptions: JwtSignOptions = {
       secret: this.config.getOrThrow<string>("JWT_ACCESS_SECRET"),
       expiresIn: this.config.get<string>(
@@ -643,8 +661,14 @@ export class AuthService {
         { sub: user.id, role: user.role, type: "access" },
         accessOptions,
       ),
-      this.jwt.signAsync({ sub: user.id, type: "refresh" }, refreshOptions),
+      this.jwt.signAsync({ sub: user.id, type: "refresh", jti: sessionId }, refreshOptions),
     ]);
-    return { accessToken, refreshToken };
+    const refreshPayload = (this.jwt as JwtService & {
+      decode?: (token: string) => { exp?: number } | null;
+    }).decode?.(refreshToken) ?? null;
+    const refreshExpiresAt = refreshPayload?.exp
+      ? new Date(refreshPayload.exp * 1000)
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    return { accessToken, refreshToken, sessionId, refreshExpiresAt };
   }
 }

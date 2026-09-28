@@ -7,11 +7,10 @@ import {
 import { ConfigService } from "@nestjs/config";
 import {
   PaymentMethod,
-  Prisma,
   ProductStatus,
   VendorStatus,
-} from "@prisma/client";
-import { PrismaService } from "../database/prisma.service";
+} from "../database/domain.types";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { ShippingService } from "../shipments/shipments.service";
 export interface QuoteItemSnapshot {
   cartItemId: string;
@@ -52,7 +51,7 @@ export interface CheckoutSnapshot {
 @Injectable()
 export class CheckoutService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly shipping: ShippingService,
     private readonly config: ConfigService,
   ) {}
@@ -61,7 +60,7 @@ export class CheckoutService {
     addressId: string,
     paymentMethod: PaymentMethod,
   ) {
-    const customer = await this.prisma.customerProfile.findUnique({
+    const customer = await this.database.customerProfile.findUnique({
       where: { userId },
       include: {
         cart: {
@@ -135,7 +134,7 @@ export class CheckoutService {
       [...grouped.entries()].map(
         async ([vendorId, items]): Promise<QuoteVendorSnapshot> => {
           const vendor = customer.cart!.items.find(
-            (line) => line.product.vendorId === vendorId,
+            (line: any) => line.product.vendorId === vendorId,
           )!.product.vendor;
           if (!vendor.pickupPincode)
             throw new BadRequestException(
@@ -145,7 +144,7 @@ export class CheckoutService {
             originPincode: vendor.pickupPincode,
             destinationPincode: address.pincode,
             weightGrams: items.reduce(
-              (sum, item) => sum + item.weightGrams * item.quantity,
+              (sum: any, item: any) => sum + item.weightGrams * item.quantity,
               0,
             ),
             cod: paymentMethod === PaymentMethod.COD,
@@ -158,7 +157,7 @@ export class CheckoutService {
             shippingServiceCode: rate.serviceCode,
             shippingDevelopment: rate.development,
             productSubtotalMinor: items.reduce(
-              (sum, item) => sum + item.lineTotalMinor,
+              (sum: any, item: any) => sum + item.lineTotalMinor,
               0,
             ),
             ...(rate.estimatedDays
@@ -170,11 +169,11 @@ export class CheckoutService {
       ),
     );
     const productSubtotalMinor = vendors.reduce(
-      (sum, vendor) => sum + vendor.productSubtotalMinor,
+      (sum: any, vendor: any) => sum + vendor.productSubtotalMinor,
       0,
     );
     const totalShippingMinor = vendors.reduce(
-      (sum, vendor) => sum + vendor.shippingMinor,
+      (sum: any, vendor: any) => sum + vendor.shippingMinor,
       0,
     );
     const snapshot: CheckoutSnapshot = {
@@ -190,21 +189,21 @@ export class CheckoutService {
       Date.now() +
         this.config.get<number>("CHECKOUT_QUOTE_TTL_MINUTES", 10) * 60_000,
     );
-    const quote = await this.prisma.checkoutQuote.create({
+    const quote = await this.database.checkoutQuote.create({
       data: {
         customerId: customer.id,
         addressId,
         productSubtotal: productSubtotalMinor / 100,
         totalShipping: totalShippingMinor / 100,
         payableTotal: snapshot.payableTotalMinor / 100,
-        snapshot: snapshot as unknown as Prisma.InputJsonValue,
+        snapshot: snapshot as unknown,
         expiresAt,
       },
     });
     return {
       quoteId: quote.id,
       addressId,
-      vendors: vendors.map((vendor) => ({
+      vendors: vendors.map((vendor: any) => ({
         vendor: {
           id: vendor.vendorId,
           name: vendor.vendorName,
@@ -212,7 +211,7 @@ export class CheckoutService {
           rating: 0,
           productCount: 0,
         },
-        items: vendor.items.map((item) => ({
+        items: vendor.items.map((item: any) => ({
           id: item.cartItemId,
           quantity: item.quantity,
           product: {

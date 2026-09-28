@@ -3,24 +3,24 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { ProductStatus, VendorStatus } from "@prisma/client";
-import { PrismaService } from "../database/prisma.service";
+import { ProductStatus, VendorStatus } from "../database/domain.types";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 @Injectable()
 export class CartService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: MongoDatabaseService) {}
   private async cartId(userId: string) {
-    const customer = await this.prisma.customerProfile.findUnique({
+    const customer = await this.database.customerProfile.findUnique({
       where: { userId },
       include: { cart: true },
     });
     if (!customer) throw new NotFoundException("Customer not found");
     if (customer.cart) return customer.cart.id;
     return (
-      await this.prisma.cart.create({ data: { customerId: customer.id } })
+      await this.database.cart.create({ data: { customerId: customer.id } })
     ).id;
   }
   async get(userId: string) {
-    const cart = await this.prisma.cart.findUniqueOrThrow({
+    const cart = await this.database.cart.findUniqueOrThrow({
       where: { id: await this.cartId(userId) },
       include: {
         items: {
@@ -64,7 +64,7 @@ export class CartService {
           id: line.product.id,
           slug: line.product.slug,
           name: line.product.name,
-          images: line.product.images.map((i) => i.url),
+          images: line.product.images.map((i: any) => i.url),
           weight: `${line.product.weightGrams} g`,
           price: { amount: price, currency: "INR" },
           availableQuantity: available,
@@ -91,15 +91,15 @@ export class CartService {
       group.subtotal += price * line.quantity;
       groups.set(line.product.vendorId, group);
     }
-    const result = [...groups.values()].map((g) => ({
+    const result = [...groups.values()].map((g: any) => ({
       ...g,
       productSubtotal: { amount: g.subtotal, currency: "INR" },
     }));
     return {
       groups: result,
-      itemCount: cart.items.reduce((s, i) => s + i.quantity, 0),
+      itemCount: cart.items.reduce((s: any, i: any) => s + i.quantity, 0),
       productSubtotal: {
-        amount: result.reduce((s, g) => s + g.subtotal, 0),
+        amount: result.reduce((s: any, g: any) => s + g.subtotal, 0),
         currency: "INR",
       },
       refreshedAt: new Date().toISOString(),
@@ -107,7 +107,7 @@ export class CartService {
   }
   async add(userId: string, productId: string, quantity: number) {
     const cartId = await this.cartId(userId);
-    const product = await this.prisma.product.findFirst({
+    const product = await this.database.product.findFirst({
       where: {
         id: productId,
         status: ProductStatus.APPROVED,
@@ -118,7 +118,7 @@ export class CartService {
     const available =
       (product?.inventory?.quantity ?? 0) - (product?.inventory?.reserved ?? 0);
     if (!product) throw new BadRequestException("Product is unavailable");
-    const existing = await this.prisma.cartItem.findUnique({
+    const existing = await this.database.cartItem.findUnique({
       where: { cartId_productId: { cartId, productId } },
     });
     const nextQuantity = (existing?.quantity ?? 0) + quantity;
@@ -126,7 +126,7 @@ export class CartService {
       throw new BadRequestException(
         "Product is unavailable in the requested quantity",
       );
-    await this.prisma.cartItem.upsert({
+    await this.database.cartItem.upsert({
       where: { cartId_productId: { cartId, productId } },
       create: { cartId, productId, quantity, unitPriceSnapshot: product.price },
       update: { quantity: { increment: quantity } },
@@ -135,7 +135,7 @@ export class CartService {
   }
   async update(userId: string, itemId: string, quantity: number) {
     const cartId = await this.cartId(userId);
-    const item = await this.prisma.cartItem.findFirst({
+    const item = await this.database.cartItem.findFirst({
       where: { id: itemId, cartId },
       include: { product: { include: { inventory: true, vendor: true } } },
     });
@@ -152,7 +152,7 @@ export class CartService {
       throw new BadRequestException(
         "Requested quantity exceeds available stock",
       );
-    await this.prisma.cartItem.update({
+    await this.database.cartItem.update({
       where: { id: itemId },
       data: { quantity, unitPriceSnapshot: item.product.price },
     });
@@ -160,14 +160,14 @@ export class CartService {
   }
   async remove(userId: string, itemId: string) {
     const cartId = await this.cartId(userId);
-    const result = await this.prisma.cartItem.deleteMany({
+    const result = await this.database.cartItem.deleteMany({
       where: { id: itemId, cartId },
     });
     if (!result.count) throw new NotFoundException("Cart item not found");
     return this.get(userId);
   }
   async clear(userId: string) {
-    await this.prisma.cartItem.deleteMany({
+    await this.database.cartItem.deleteMany({
       where: { cartId: await this.cartId(userId) },
     });
   }

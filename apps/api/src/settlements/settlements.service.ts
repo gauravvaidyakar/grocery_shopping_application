@@ -5,19 +5,19 @@ import {
   RefundStatus,
   ReturnStatus,
   SettlementStatus,
-} from "@prisma/client";
-import { PrismaService } from "../database/prisma.service";
+} from "../database/domain.types";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { VendorsService } from "../vendors/vendors.service";
 
 @Injectable()
 export class SettlementsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly vendors: VendorsService,
   ) {}
 
   async vendor(userId: string) {
-    return this.prisma.settlement.findMany({
+    return this.database.settlement.findMany({
       where: { vendorId: await this.vendors.getVendorId(userId) },
       include: { items: { include: { vendorOrder: true } } },
       orderBy: { createdAt: "desc" },
@@ -25,7 +25,7 @@ export class SettlementsService {
   }
 
   admin() {
-    return this.prisma.settlement.findMany({
+    return this.database.settlement.findMany({
       include: {
         vendor: { select: { businessName: true } },
         items: { include: { vendorOrder: true } },
@@ -35,8 +35,8 @@ export class SettlementsService {
   }
 
   async refreshEligibility(now = new Date()) {
-    return this.prisma.$transaction(
-      async (tx) => {
+    return this.database.transaction(
+      async (tx: any) => {
         const eligibleOrders = await tx.vendorOrder.findMany({
           where: {
             settlementStatus: SettlementStatus.PENDING,
@@ -67,12 +67,12 @@ export class SettlementsService {
         const created: string[] = [];
         for (const order of eligibleOrders) {
           const commissionAmount = order.commissions.reduce(
-            (sum, commission) => sum + commission.amount,
+            (sum: any, commission: any) => sum + commission.amount,
             0,
           );
           const refundAmount = order.refunds
-            .filter((refund) => refund.status === RefundStatus.COMPLETED)
-            .reduce((sum, refund) => sum + refund.amount, 0);
+            .filter((refund: any) => refund.status === RefundStatus.COMPLETED)
+            .reduce((sum: any, refund: any) => sum + refund.amount, 0);
           const settlementAmount =
             order.productSubtotal - commissionAmount - refundAmount;
           if (settlementAmount < 0) {
@@ -113,7 +113,7 @@ export class SettlementsService {
   }
 
   async process(id: string) {
-    const settlement = await this.prisma.settlement.findUniqueOrThrow({
+    const settlement = await this.database.settlement.findUniqueOrThrow({
       where: { id },
     });
     if (
@@ -124,7 +124,7 @@ export class SettlementsService {
         "Settlement is not eligible for processing",
       );
     }
-    return this.prisma.$transaction(async (tx) => {
+    return this.database.transaction(async (tx: any) => {
       await tx.settlement.update({
         where: { id },
         data: { status: SettlementStatus.PROCESSING, processedAt: new Date() },
@@ -138,8 +138,8 @@ export class SettlementsService {
   }
 
   async complete(id: string, providerReference: string) {
-    return this.prisma.$transaction(
-      async (tx) => {
+    return this.database.transaction(
+      async (tx: any) => {
         const settlement = await tx.settlement.findUniqueOrThrow({
           where: { id },
           include: { items: true },

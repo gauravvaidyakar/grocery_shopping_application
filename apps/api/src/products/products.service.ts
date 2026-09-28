@@ -4,9 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { Prisma, ProductStatus, ReviewStatus, VendorStatus } from "@prisma/client";
+import { MongoData, ProductStatus, ReviewStatus, VendorStatus } from "../database/domain.types";
 import { randomBytes } from "node:crypto";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { VendorsService } from "../vendors/vendors.service";
 import type {
   CreateProductDto,
@@ -50,21 +50,21 @@ const publicProductSelect = {
   inventory: {
     select: { quantity: true, reserved: true, lowStockThreshold: true },
   },
-} satisfies Prisma.ProductSelect;
+} satisfies MongoData.ProductSelect;
 
-type PublicProduct = Prisma.ProductGetPayload<{
+type PublicProduct = MongoData.ProductGetPayload<{
   select: typeof publicProductSelect;
 }>;
 
 @Injectable()
 export class ProductsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly vendors: VendorsService,
   ) {}
 
   async publicList(query: ProductQueryDto) {
-    const where: Prisma.ProductWhereInput = {
+    const where: MongoData.ProductWhereInput = {
       status: ProductStatus.APPROVED,
       vendor: { status: VendorStatus.APPROVED },
       ...(query.search
@@ -91,7 +91,7 @@ export class ProductsService {
         ? { inventory: { is: { quantity: { gt: 0 } } } }
         : {}),
     };
-    const orderBy: Prisma.ProductOrderByWithRelationInput =
+    const orderBy: MongoData.ProductOrderByWithRelationInput =
       query.sort === "PRICE_ASC"
         ? { price: "asc" }
         : query.sort === "PRICE_DESC"
@@ -99,19 +99,19 @@ export class ProductsService {
           : query.sort === "POPULAR"
             ? { orderItems: { _count: "desc" } }
             : { createdAt: "desc" };
-    const [items, total] = await this.prisma.$transaction([
-      this.prisma.product.findMany({
+    const [items, total] = await Promise.all([
+      this.database.product.findMany({
         where,
         select: publicProductSelect,
         orderBy,
         skip: (query.page - 1) * query.limit,
         take: query.limit,
       }),
-      this.prisma.product.count({ where }),
+      this.database.product.count({ where }),
     ]);
     const ratings = await this.ratingMaps(items);
     return {
-      data: items.map((item) =>
+      data: items.map((item: any) =>
         this.toPublic(
           item,
           ratings.products.get(item.id),
@@ -128,7 +128,7 @@ export class ProductsService {
   }
 
   async publicGet(idOrSlug: string) {
-    const product = await this.prisma.product.findFirst({
+    const product = await this.database.product.findFirst({
       where: {
         OR: [{ id: idOrSlug }, { slug: idOrSlug }],
         status: ProductStatus.APPROVED,
@@ -151,15 +151,15 @@ export class ProductsService {
       vendorId,
       ...(query.status ? { status: query.status } : {}),
     };
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.product.findMany({
+    const [data, total] = await Promise.all([
+      this.database.product.findMany({
         where,
         include: { category: true, images: true, inventory: true },
         skip: (query.page - 1) * query.limit,
         take: query.limit,
         orderBy: { createdAt: "desc" },
       }),
-      this.prisma.product.count({ where }),
+      this.database.product.count({ where }),
     ]);
     return {
       data,
@@ -186,7 +186,7 @@ export class ProductsService {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")}-${randomBytes(3).toString("hex")}`;
     const { images, stock, specifications, ...data } = input;
-    return this.prisma.$transaction(async (tx) =>
+    return this.database.transaction((tx: any) =>
       tx.product.create({
         data: {
           ...data,
@@ -210,7 +210,7 @@ export class ProductsService {
           slug,
           vendorId: vendor.id,
           images: {
-            create: images.map((url, sortOrder) => ({ url, sortOrder })),
+            create: images.map((url: any, sortOrder: any) => ({ url, sortOrder })),
           },
           inventory: {
             create: {
@@ -233,7 +233,7 @@ export class ProductsService {
 
   async getOwned(userId: string, id: string) {
     const vendorId = await this.vendors.getVendorId(userId);
-    const product = await this.prisma.product.findFirst({
+    const product = await this.database.product.findFirst({
       where: { id, vendorId },
       include: { category: true, images: true, inventory: true },
     });
@@ -251,11 +251,11 @@ export class ProductsService {
         "Only draft or rejected products can be edited",
       );
     const { images, specifications, ...data } = input;
-    return this.prisma.$transaction(async (tx) => {
+    return this.database.transaction(async (tx: any) => {
       if (images) {
         await tx.productImage.deleteMany({ where: { productId: id } });
         await tx.productImage.createMany({
-          data: images.map((url, sortOrder) => ({
+          data: images.map((url: any, sortOrder: any) => ({
             productId: id,
             url,
             sortOrder,
@@ -283,14 +283,14 @@ export class ProductsService {
       throw new BadRequestException(
         "Product cannot be submitted in its current state",
       );
-    return this.prisma.product.update({
+    return this.database.product.update({
       where: { id },
       data: { status: ProductStatus.PENDING_APPROVAL, rejectionReason: null },
     });
   }
   async archive(userId: string, id: string) {
     await this.getOwned(userId, id);
-    return this.prisma.product.update({
+    return this.database.product.update({
       where: { id },
       data: { status: ProductStatus.ARCHIVED },
     });
@@ -336,10 +336,10 @@ export class ProductsService {
       description: product.description,
       ingredients: product.ingredients
         ?.split(",")
-        .map((value) => value.trim())
+        .map((value: any) => value.trim())
         .filter(Boolean),
       specifications: product.specifications ?? {},
-      images: product.images.map((image) => image.url),
+      images: product.images.map((image: any) => image.url),
       stockStatus:
         available === 0
           ? "OUT_OF_STOCK"
@@ -355,8 +355,8 @@ export class ProductsService {
   }
 
   private async ratingMaps(products: PublicProduct[]) {
-    const productIds = products.map((product) => product.id);
-    const vendorIds = [...new Set(products.map((product) => product.vendorId))];
+    const productIds = products.map((product: any) => product.id);
+    const vendorIds = [...new Set(products.map((product: any) => product.vendorId))];
     if (!productIds.length) {
       return {
         products: new Map<string, { rating: number; reviewCount: number }>(),
@@ -365,7 +365,7 @@ export class ProductsService {
     }
 
     const [productRatings, vendorReviews] = await Promise.all([
-      this.prisma.review.groupBy({
+      this.database.review.groupBy({
         by: ["productId"],
         where: {
           productId: { in: productIds },
@@ -374,7 +374,7 @@ export class ProductsService {
         _avg: { rating: true },
         _count: { rating: true },
       }),
-      this.prisma.review.findMany({
+      this.database.review.findMany({
         where: {
           status: ReviewStatus.PUBLISHED,
           product: {
@@ -390,7 +390,7 @@ export class ProductsService {
     ]);
 
     const productMap = new Map(
-      productRatings.map((entry) => [
+      productRatings.map((entry: any) => [
         entry.productId,
         {
           rating: entry._avg.rating ?? 0,
@@ -399,7 +399,7 @@ export class ProductsService {
       ]),
     );
     const vendorTotals = new Map<string, { total: number; count: number }>();
-    vendorReviews.forEach((review) => {
+    vendorReviews.forEach((review: any) => {
       const current = vendorTotals.get(review.product.vendorId) ?? {
         total: 0,
         count: 0,

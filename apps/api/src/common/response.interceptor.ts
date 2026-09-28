@@ -20,7 +20,7 @@ export class ResponseInterceptor<T> implements NestInterceptor<T, unknown> {
     next: CallHandler<T | ApiResult<T>>,
   ): Observable<unknown> {
     return next.handle().pipe(
-      map((value) => {
+      map((value: any) => {
         if (value instanceof StreamableFile) return value;
         if (value && typeof value === "object" && "data" in value) {
           const result = value;

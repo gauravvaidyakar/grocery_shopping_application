@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import type { AddressDto } from "./addresses.dto";
 @Injectable()
 export class AddressesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: MongoDatabaseService) {}
   private async customerId(userId: string) {
-    const customer = await this.prisma.customerProfile.findUnique({
+    const customer = await this.database.customerProfile.findUnique({
       where: { userId },
       select: { id: true },
     });
@@ -13,14 +13,14 @@ export class AddressesService {
     return customer.id;
   }
   async list(userId: string) {
-    return this.prisma.address.findMany({
+    return this.database.address.findMany({
       where: { customerId: await this.customerId(userId) },
       orderBy: [{ isDefault: "desc" }, { createdAt: "desc" }],
     });
   }
   async create(userId: string, input: AddressDto) {
     const customerId = await this.customerId(userId);
-    return this.prisma.$transaction(async (tx) => {
+    return this.database.transaction(async (tx: any) => {
       if (input.isDefault)
         await tx.address.updateMany({
           where: { customerId },
@@ -31,11 +31,11 @@ export class AddressesService {
   }
   async update(userId: string, id: string, input: AddressDto) {
     const customerId = await this.customerId(userId);
-    const exists = await this.prisma.address.findFirst({
+    const exists = await this.database.address.findFirst({
       where: { id, customerId },
     });
     if (!exists) throw new NotFoundException("Address not found");
-    return this.prisma.$transaction(async (tx) => {
+    return this.database.transaction(async (tx: any) => {
       if (input.isDefault)
         await tx.address.updateMany({
           where: { customerId, id: { not: id } },
@@ -46,7 +46,7 @@ export class AddressesService {
   }
   async remove(userId: string, id: string) {
     const customerId = await this.customerId(userId);
-    const result = await this.prisma.address.deleteMany({
+    const result = await this.database.address.deleteMany({
       where: { id, customerId },
     });
     if (!result.count) throw new NotFoundException("Address not found");

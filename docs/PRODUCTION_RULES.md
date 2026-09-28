@@ -225,18 +225,18 @@ Admin/vendor/customer listing APIs should support appropriate:
 
 # 12. DATABASE
 
-Use PostgreSQL.
+Use MongoDB.
 
-Use Prisma ORM.
+Use Mongoose ODM.
 
 Database must use:
 
-- Foreign keys
+- Indexed document references
 - Unique constraints
 - Indexes
 - Transactions
 - Appropriate relations
-- Appropriate cascading behavior
+- Explicit application-level cascading behavior
 
 Do not duplicate business-critical data unnecessarily.
 

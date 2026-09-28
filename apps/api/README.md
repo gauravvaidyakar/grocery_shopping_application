@@ -1,15 +1,15 @@
 # Vishwaneed API
 
-NestJS modular-monolith API for Vishwaneed. MongoDB is the system of record and Prisma owns the application schema and indexes.
+NestJS modular-monolith API for Vishwaneed. MongoDB is the system of record and
+Mongoose owns the application schemas and indexes.
 
 ## Local setup
 
 1. Create a MongoDB Atlas deployment (or a local replica set) and database named `grocery_web_application`.
-2. Copy `.env.example` to `.env`, set its MongoDB `DATABASE_URL`, and replace every secret/example credential.
-3. Run `npm run prisma:generate --workspace @vishwaneed/api`.
-4. Run `npm run prisma:deploy --workspace @vishwaneed/api`.
-5. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD`, then run `npm run prisma:seed --workspace @vishwaneed/api`.
-6. Run `npm run dev:api` from the repository root.
+2. Copy `.env.example` to `.env`, set `MONGODB_URI` and `MONGODB_DATABASE`, and replace every secret/example credential.
+3. Run `npm run mongodb:setup --workspace @vishwaneed/api` to create/verify indexes.
+4. Set `ADMIN_EMAIL` and `ADMIN_PASSWORD`, then run `npm run mongodb:seed --workspace @vishwaneed/api`.
+5. Run `npm run dev:api` from the repository root.
 
 The API is served at `http://localhost:4000/api/v1`. Swagger is served at `http://localhost:4000/api/docs`.
 

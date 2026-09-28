@@ -3,18 +3,18 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { VendorsService } from "../vendors/vendors.service";
 
 @Injectable()
 export class InventoryService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly vendors: VendorsService,
   ) {}
   async list(userId: string) {
     const vendorId = await this.vendors.getVendorId(userId);
-    return this.prisma.inventory.findMany({
+    return this.database.inventory.findMany({
       where: { product: { vendorId } },
       include: { product: { select: { id: true, name: true, status: true } } },
       orderBy: { updatedAt: "desc" },
@@ -27,8 +27,8 @@ export class InventoryService {
     reason: string,
   ) {
     const vendorId = await this.vendors.getVendorId(userId);
-    return this.prisma.$transaction(
-      async (tx) => {
+    return this.database.transaction(
+      async (tx: any) => {
         const inventory = await tx.inventory.findFirst({
           where: { productId, product: { vendorId } },
         });
@@ -62,9 +62,9 @@ export class InventoryService {
   }
   async history(userId: string, productId: string) {
     const vendorId = await this.vendors.getVendorId(userId);
-    const inventory = await this.prisma.inventory.findFirst({ where: { productId, product: { vendorId } } });
+    const inventory = await this.database.inventory.findFirst({ where: { productId, product: { vendorId } } });
     if (!inventory) throw new NotFoundException("Inventory not found");
-    return this.prisma.inventoryTransaction.findMany({
+    return this.database.inventoryTransaction.findMany({
       where: { inventoryId: inventory.id },
       orderBy: { createdAt: "desc" },
     });

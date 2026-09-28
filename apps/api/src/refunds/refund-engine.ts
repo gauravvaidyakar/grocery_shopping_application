@@ -2,12 +2,12 @@ import {
   LedgerDirection,
   LedgerEntryType,
   PaymentStatus,
-  Prisma,
+  MongoData,
   RefundStatus,
-} from "@prisma/client";
+} from "../database/domain.types";
 
 export async function completeRefundFinancials(
-  tx: Prisma.TransactionClient,
+  tx: MongoData.TransactionClient,
   refundId: string,
   providerReference?: string,
 ) {

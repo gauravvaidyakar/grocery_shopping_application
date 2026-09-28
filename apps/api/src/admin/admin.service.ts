@@ -8,14 +8,14 @@ import {
   VendorStatus,
   VendorSuspensionReason,
   VerificationStatus,
-} from "@prisma/client";
-import { PrismaService } from "../database/prisma.service";
+} from "../database/domain.types";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { VendorsService } from "../vendors/vendors.service";
 
 @Injectable()
 export class AdminService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly vendors: VendorsService,
   ) {}
   async dashboard() {
@@ -35,11 +35,11 @@ export class AdminService {
       complaints,
       reviews,
       inventory,
-    ] = await this.prisma.$transaction([
-      this.prisma.customerProfile.count(),
-      this.prisma.vendor.count(),
-      this.prisma.vendor.count({ where: { status: VendorStatus.APPROVED } }),
-      this.prisma.vendor.count({
+    ] = await Promise.all([
+      this.database.customerProfile.count(),
+      this.database.vendor.count(),
+      this.database.vendor.count({ where: { status: VendorStatus.APPROVED } }),
+      this.database.vendor.count({
         where: {
           status: {
             in: [
@@ -50,19 +50,19 @@ export class AdminService {
           },
         },
       }),
-      this.prisma.product.count(),
-      this.prisma.product.count({
+      this.database.product.count(),
+      this.database.product.count({
         where: { status: ProductStatus.PENDING_APPROVAL },
       }),
-      this.prisma.masterOrder.count(),
-      this.prisma.vendorOrder.count(),
-      this.prisma.masterOrder.aggregate({ _sum: { payableTotal: true } }),
-      this.prisma.commissionTransaction.aggregate({ _sum: { amount: true } }),
-      this.prisma.settlement.aggregate({ _sum: { amount: true } }),
-      this.prisma.refund.aggregate({ _sum: { amount: true } }),
-      this.prisma.complaint.count(),
-      this.prisma.review.count(),
-      this.prisma.inventory.count(),
+      this.database.masterOrder.count(),
+      this.database.vendorOrder.count(),
+      this.database.masterOrder.aggregate({ _sum: { payableTotal: true } }),
+      this.database.commissionTransaction.aggregate({ _sum: { amount: true } }),
+      this.database.settlement.aggregate({ _sum: { amount: true } }),
+      this.database.refund.aggregate({ _sum: { amount: true } }),
+      this.database.complaint.count(),
+      this.database.review.count(),
+      this.database.inventory.count(),
     ]);
     return {
       customers,
@@ -84,8 +84,8 @@ export class AdminService {
     };
   }
   async listVendors(page: number, limit: number) {
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.vendor.findMany({
+    const [data, total] = await Promise.all([
+      this.database.vendor.findMany({
         include: {
           user: { select: { email: true, mobile: true, status: true } },
           _count: {
@@ -96,7 +96,7 @@ export class AdminService {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.vendor.count(),
+      this.database.vendor.count(),
     ]);
     return {
       data,
@@ -104,8 +104,8 @@ export class AdminService {
     };
   }
   async listCustomers(page: number, limit: number) {
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.customerProfile.findMany({
+    const [data, total] = await Promise.all([
+      this.database.customerProfile.findMany({
         select: {
           id: true,
           firstName: true,
@@ -128,10 +128,10 @@ export class AdminService {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.customerProfile.count(),
+      this.database.customerProfile.count(),
     ]);
     return {
-      data: data.map((customer) => ({
+      data: data.map((customer: any) => ({
         id: customer.id,
         name: `${customer.firstName} ${customer.lastName}`.trim(),
         email: customer.user.email,
@@ -150,7 +150,7 @@ export class AdminService {
     };
   }
   async vendor(id: string) {
-    const vendor = await this.prisma.vendor.findUnique({
+    const vendor = await this.database.vendor.findUnique({
       where: { id },
       include: {
         user: { select: { email: true, mobile: true, status: true } },
@@ -218,7 +218,7 @@ export class AdminService {
       VendorStatus.SUSPENDED,
       `${reason}: ${details ?? ""}`.trim(),
     );
-    return this.prisma.vendor.update({
+    return this.database.vendor.update({
       where: { id },
       data: {
         suspensionReason: reason,
@@ -237,15 +237,15 @@ export class AdminService {
       throw new BadRequestException(
         "Verification must be VERIFIED or REJECTED",
       );
-    const account = await this.prisma.vendorBankAccount.findUnique({
+    const account = await this.database.vendorBankAccount.findUnique({
       where: { id },
     });
     if (!account) throw new NotFoundException("Bank account not found");
-    const updated = await this.prisma.vendorBankAccount.update({
+    const updated = await this.database.vendorBankAccount.update({
       where: { id },
       data: { status },
     });
-    await this.prisma.auditLog.create({
+    await this.database.auditLog.create({
       data: {
         actorId,
         action: `VENDOR_BANK_${status}`,
@@ -258,8 +258,8 @@ export class AdminService {
     return updated;
   }
   async listProducts(page: number, limit: number) {
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.product.findMany({
+    const [data, total] = await Promise.all([
+      this.database.product.findMany({
         include: {
           vendor: { select: { id: true, businessName: true, status: true } },
           category: true,
@@ -270,7 +270,7 @@ export class AdminService {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.product.count(),
+      this.database.product.count(),
     ]);
     return {
       data,
@@ -278,7 +278,7 @@ export class AdminService {
     };
   }
   async approveProduct(id: string, actorId: string) {
-    const product = await this.prisma.product.findUnique({
+    const product = await this.database.product.findUnique({
       where: { id },
       include: { vendor: true },
     });
@@ -287,7 +287,7 @@ export class AdminService {
       throw new BadRequestException("Product is not pending approval");
     if (product.vendor.status !== VendorStatus.APPROVED)
       throw new BadRequestException("Vendor must be approved");
-    const updated = await this.prisma.product.update({
+    const updated = await this.database.product.update({
       where: { id },
       data: {
         status: ProductStatus.APPROVED,
@@ -306,9 +306,9 @@ export class AdminService {
     return updated;
   }
   async rejectProduct(id: string, actorId: string, reason: string) {
-    const product = await this.prisma.product.findUnique({ where: { id } });
+    const product = await this.database.product.findUnique({ where: { id } });
     if (!product) throw new NotFoundException("Product not found");
-    const updated = await this.prisma.product.update({
+    const updated = await this.database.product.update({
       where: { id },
       data: { status: ProductStatus.REJECTED, rejectionReason: reason },
     });
@@ -323,8 +323,8 @@ export class AdminService {
     return updated;
   }
   async listOrders(page: number, limit: number) {
-    const [data, total] = await this.prisma.$transaction([
-      this.prisma.masterOrder.findMany({
+    const [data, total] = await Promise.all([
+      this.database.masterOrder.findMany({
         include: {
           vendorOrders: {
             include: {
@@ -339,7 +339,7 @@ export class AdminService {
         skip: (page - 1) * limit,
         take: limit,
       }),
-      this.prisma.masterOrder.count(),
+      this.database.masterOrder.count(),
     ]);
     return {
       data,
@@ -347,7 +347,7 @@ export class AdminService {
     };
   }
   async order(id: string) {
-    const order = await this.prisma.masterOrder.findUnique({
+    const order = await this.database.masterOrder.findUnique({
       where: { id },
       include: {
         customer: true,
@@ -362,44 +362,44 @@ export class AdminService {
     return order;
   }
   payments(page: number, limit: number) {
-    return this.page(this.prisma.payment, page, limit, {
+    return this.page(this.database.payment, page, limit, {
       include: { masterOrder: { select: { orderNumber: true } }, refunds: true },
       orderBy: { createdAt: "desc" },
     });
   }
   shipments(page: number, limit: number) {
-    return this.page(this.prisma.shipment, page, limit, {
+    return this.page(this.database.shipment, page, limit, {
       include: { vendorOrder: { include: { vendor: { select: { businessName: true } }, masterOrder: { select: { orderNumber: true } } } } },
       orderBy: { createdAt: "desc" },
     });
   }
   ledger(page: number, limit: number) {
-    return this.page(this.prisma.vendorLedger, page, limit, {
+    return this.page(this.database.vendorLedger, page, limit, {
       include: { vendor: { select: { businessName: true } }, vendorOrder: { select: { vendorOrderNumber: true } } },
       orderBy: { createdAt: "desc" },
     });
   }
   replacements(page: number, limit: number) {
-    return this.page(this.prisma.replacement, page, limit, {
+    return this.page(this.database.replacement, page, limit, {
       include: { orderItem: { include: { product: { include: { vendor: { select: { businessName: true } } } }, vendorOrder: { include: { masterOrder: { include: { customer: true } } } } } } },
       orderBy: { createdAt: "desc" },
     });
   }
   notifications(page: number, limit: number) {
-    return this.page(this.prisma.notification, page, limit, { orderBy: { createdAt: "desc" } });
+    return this.page(this.database.notification, page, limit, { orderBy: { createdAt: "desc" } });
   }
   auditLogs(page: number, limit: number) {
-    return this.page(this.prisma.auditLog, page, limit, {
+    return this.page(this.database.auditLog, page, limit, {
       include: { actor: { select: { email: true, role: true } } },
       orderBy: { createdAt: "desc" },
     });
   }
   async reports() {
-    const [sales, commission, refunds, settlements] = await this.prisma.$transaction([
-      this.prisma.masterOrder.aggregate({ _sum: { payableTotal: true }, _count: true }),
-      this.prisma.commissionTransaction.aggregate({ _sum: { amount: true }, _count: true }),
-      this.prisma.refund.aggregate({ _sum: { amount: true }, _count: true }),
-      this.prisma.settlement.aggregate({ _sum: { amount: true }, _count: true }),
+    const [sales, commission, refunds, settlements] = await Promise.all([
+      this.database.masterOrder.aggregate({ _sum: { payableTotal: true }, _count: true }),
+      this.database.commissionTransaction.aggregate({ _sum: { amount: true }, _count: true }),
+      this.database.refund.aggregate({ _sum: { amount: true }, _count: true }),
+      this.database.settlement.aggregate({ _sum: { amount: true }, _count: true }),
     ]);
     return { sales, commission, refunds, settlements };
   }
@@ -418,7 +418,7 @@ export class AdminService {
     previousValue: object,
     newValue: object,
   ) {
-    return this.prisma.auditLog.create({
+    return this.database.auditLog.create({
       data: { actorId, action, entityType, entityId, previousValue, newValue },
     });
   }

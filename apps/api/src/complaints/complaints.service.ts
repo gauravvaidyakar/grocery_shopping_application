@@ -4,11 +4,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { ComplaintStatus, Prisma, Role } from "@prisma/client";
+import { ComplaintStatus, MongoData, Role } from "../database/domain.types";
 import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import type { CreateComplaintDto } from "./complaints.dto";
 import { VendorsService } from "../vendors/vendors.service";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -22,15 +22,15 @@ const ATTACHMENT_MIME = new Map([
 
 const CUSTOMER_COMPLAINT_INCLUDE = {
   messages: { orderBy: { createdAt: "asc" } },
-} satisfies Prisma.ComplaintInclude;
+} satisfies MongoData.ComplaintInclude;
 
-type CustomerComplaint = Prisma.ComplaintGetPayload<{
+type CustomerComplaint = MongoData.ComplaintGetPayload<{
   include: typeof CUSTOMER_COMPLAINT_INCLUDE;
 }>;
 @Injectable()
 export class ComplaintsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly vendors: VendorsService,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
@@ -40,7 +40,7 @@ export class ComplaintsService {
     input: CreateComplaintDto,
     files: Express.Multer.File[] = [],
   ) {
-    const customer = await this.prisma.customerProfile.findUnique({
+    const customer = await this.database.customerProfile.findUnique({
       where: { userId },
     });
     if (!customer) throw new NotFoundException("Customer not found");
@@ -50,7 +50,7 @@ export class ComplaintsService {
       vendorOrder: { vendorId: string };
     } | null = null;
     if (input.relatedOrderItemId)
-      orderItem = await this.prisma.orderItem.findFirst({
+      orderItem = await this.database.orderItem.findFirst({
         where: {
           id: input.relatedOrderItemId,
           vendorOrder: { masterOrder: { customerId: customer.id } },
@@ -65,14 +65,14 @@ export class ComplaintsService {
     }
     let masterOrderId: string | undefined;
     if (input.relatedOrderId) {
-      const order = await this.prisma.masterOrder.findFirst({
+      const order = await this.database.masterOrder.findFirst({
         where: { id: input.relatedOrderId, customerId: customer.id },
         select: { id: true },
       });
       if (!order) throw new NotFoundException("Related order not found");
       masterOrderId = order.id;
     }
-    const complaint = await this.prisma.complaint.create({
+    const complaint = await this.database.complaint.create({
       data: {
         referenceNumber: `CMP-${Date.now()}-${randomBytes(2).toString("hex").toUpperCase()}`,
         customerId: customer.id,
@@ -94,6 +94,14 @@ export class ComplaintsService {
       },
       include: CUSTOMER_COMPLAINT_INCLUDE,
     });
+    if (storedAttachments.length || input.attachmentUrls?.length) {
+      await this.database.complaintAttachment.createMany({
+        data: [
+          ...storedAttachments.map((attachment: any) => ({ complaintId: complaint.id, ...attachment, source: "UPLOAD" })),
+          ...(input.attachmentUrls ?? []).map((url: any) => ({ complaintId: complaint.id, url, source: "URL" })),
+        ],
+      });
+    }
     void this.notifications.notifyComplaintStatus(complaint.id, "CREATED");
     return this.presentCustomerComplaint(complaint);
   }
@@ -138,17 +146,17 @@ export class ComplaintsService {
     return stored;
   }
   async list(userId: string) {
-    const complaints = await this.prisma.complaint.findMany({
+    const complaints = await this.database.complaint.findMany({
       where: { customer: { userId } },
       include: CUSTOMER_COMPLAINT_INCLUDE,
       orderBy: { createdAt: "desc" },
     });
-    return complaints.map((complaint) =>
+    return complaints.map((complaint: any) =>
       this.presentCustomerComplaint(complaint),
     );
   }
   async get(userId: string, id: string) {
-    const complaint = await this.prisma.complaint.findFirst({
+    const complaint = await this.database.complaint.findFirst({
       where: { id, customer: { userId } },
       include: CUSTOMER_COMPLAINT_INCLUDE,
     });
@@ -157,7 +165,7 @@ export class ComplaintsService {
   }
   async message(userId: string, id: string, message: string) {
     await this.get(userId, id);
-    const createdMessage = await this.prisma.complaintMessage.create({
+    const createdMessage = await this.database.complaintMessage.create({
       data: {
         complaintId: id,
         authorId: userId,
@@ -170,7 +178,7 @@ export class ComplaintsService {
   }
 
   adminList() {
-    return this.prisma.complaint.findMany({
+    return this.database.complaint.findMany({
       include: { customer: true, vendor: true, messages: true },
       orderBy: { createdAt: "desc" },
     });
@@ -178,7 +186,7 @@ export class ComplaintsService {
 
   async vendorList(userId: string) {
     const vendorId = await this.vendors.getVendorId(userId);
-    return this.prisma.complaint.findMany({
+    return this.database.complaint.findMany({
       where: { vendorId },
       include: { messages: true },
       orderBy: { createdAt: "desc" },
@@ -188,18 +196,18 @@ export class ComplaintsService {
   async staffMessage(userId: string, role: Role, id: string, message: string) {
     if (role === Role.VENDOR) {
       const vendorId = await this.vendors.getVendorId(userId);
-      const owned = await this.prisma.complaint.findFirst({
+      const owned = await this.database.complaint.findFirst({
         where: { id, vendorId },
       });
       if (!owned) throw new NotFoundException("Complaint not found");
     } else {
-      await this.prisma.complaint.findUniqueOrThrow({ where: { id } });
+      await this.database.complaint.findUniqueOrThrow({ where: { id } });
     }
-    const createdMessage = await this.prisma.complaintMessage.create({
+    const createdMessage = await this.database.complaintMessage.create({
       data: { complaintId: id, authorId: userId, authorRole: role, message },
     });
     void this.notifications.notifyComplaintStatus(id, `${role}_MESSAGE_${createdMessage.id}`);
-    return this.prisma.complaint.findUniqueOrThrow({
+    return this.database.complaint.findUniqueOrThrow({
       where: { id },
       include: { messages: { orderBy: { createdAt: "asc" } } },
     });
@@ -213,7 +221,7 @@ export class ComplaintsService {
     ) {
       throw new BadRequestException("A resolution is required");
     }
-    const complaint = await this.prisma.complaint.update({
+    const complaint = await this.database.complaint.update({
       where: { id },
       data: { status, ...(resolution ? { resolution } : {}) },
     });
@@ -235,13 +243,13 @@ export class ComplaintsService {
       relatedOrderItemId: complaint.orderItemId ?? undefined,
       createdAt: complaint.createdAt.toISOString(),
       updatedAt: complaint.updatedAt.toISOString(),
-      messages: complaint.messages.map((message) => ({
+      messages: complaint.messages.map((message: any) => ({
         id: message.id,
         author: message.authorRole === Role.CUSTOMER ? "CUSTOMER" : "SUPPORT",
         message: message.message,
         createdAt: message.createdAt.toISOString(),
       })),
-      attachmentNames: attachments.flatMap((attachment) => {
+      attachmentNames: attachments.flatMap((attachment: any) => {
         if (typeof attachment === "string") return [attachment];
         if (
           attachment &&

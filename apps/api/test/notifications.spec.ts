@@ -1,7 +1,7 @@
 import type { ConfigService } from "@nestjs/config";
-import { NotificationStatus } from "@prisma/client";
+import { NotificationStatus } from "../src/database/domain.types";
 import { describe, expect, it, vi } from "vitest";
-import type { PrismaService } from "../src/database/prisma.service";
+import type { MongoDatabaseService } from "../src/database/mongo-database.service";
 import type { IntegrationSettingsService } from "../src/integration-settings/integration-settings.service";
 import { NotificationsService } from "../src/notifications/notifications.service";
 import {
@@ -72,7 +72,7 @@ describe("Notification delivery", () => {
   });
 
   it("notifies the customer and every relevant vendor when an order is placed", async () => {
-    const prisma = {
+    const database = {
       masterOrder: {
         findUnique: vi.fn().mockResolvedValue({
           id: "master-order",
@@ -91,9 +91,9 @@ describe("Notification delivery", () => {
           ],
         }),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new NotificationsService(
-      prisma,
+      database,
       { send: vi.fn() } as unknown as WhatsAppProviderRouter,
       config(),
       sms(),
@@ -119,7 +119,7 @@ describe("Notification delivery", () => {
 
   it("uses the vendor business mobile when the login account has no mobile", async () => {
     const send = vi.fn().mockResolvedValue("provider-reference");
-    const prisma = {
+    const database = {
       user: {
         findUnique: vi.fn().mockResolvedValue({
           id: "vendor-user",
@@ -136,9 +136,9 @@ describe("Notification delivery", () => {
         }),
         updateMany: vi.fn(),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new NotificationsService(
-      prisma,
+      database,
       { send } as unknown as WhatsAppProviderRouter,
       config(),
       sms(),
@@ -161,11 +161,11 @@ describe("Notification delivery", () => {
   it("does not send the same lifecycle event twice", async () => {
     const send = vi.fn();
     const existing = { id: "existing", status: NotificationStatus.SENT };
-    const prisma = {
+    const database = {
       notification: { findUnique: vi.fn().mockResolvedValue(existing) },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new NotificationsService(
-      prisma,
+      database,
       { send } as unknown as WhatsAppProviderRouter,
       config(),
       sms(),
@@ -182,7 +182,7 @@ describe("Notification delivery", () => {
       id: "notification",
       status: NotificationStatus.FAILED,
     });
-    const prisma = {
+    const database = {
       user: {
         findUnique: vi.fn().mockResolvedValue({
           id: "vendor-user",
@@ -194,9 +194,9 @@ describe("Notification delivery", () => {
         findUnique: vi.fn().mockResolvedValue(null),
         create,
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new NotificationsService(
-      prisma,
+      database,
       { send: vi.fn() } as unknown as WhatsAppProviderRouter,
       config(),
       sms(),
@@ -226,15 +226,15 @@ describe("Notification delivery", () => {
       id: "sms-notification",
       status: NotificationStatus.SENT,
     });
-    const prisma = {
+    const database = {
       user: {
         findUnique: vi.fn().mockResolvedValue({ mobile: "9876543210" }),
       },
       notification: { create, update, updateMany: vi.fn() },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const whatsappSend = vi.fn();
     const service = new NotificationsService(
-      prisma,
+      database,
       { send: whatsappSend } as unknown as WhatsAppProviderRouter,
       config(),
       sms(sendSms),

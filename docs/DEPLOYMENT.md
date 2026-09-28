@@ -8,8 +8,8 @@
 
 ## Render backend
 
-The repository-root `render.yaml` provisions the NestJS API, applies its Prisma
-schema to MongoDB, runs the idempotent production seed, and configures a health check.
+The repository-root `render.yaml` describes the NestJS MongoDB API and configures
+a health check. It does not run a PostgreSQL migration or import legacy data.
 It currently uses Render's free plans. Files written by the public/private
 upload adapters are ephemeral on this plan and can be lost on restart; use a
 paid persistent disk or private object-storage adapter before relying on uploads
@@ -18,9 +18,9 @@ in production.
 During initial Blueprint creation, provide:
 
 - `CORS_ORIGINS`: the single public marketplace origin
-- `DATABASE_URL`: the MongoDB Atlas connection string for the dedicated
-  `grocery_web_application` database, authenticating as the
+- `MONGODB_URI`: the MongoDB Atlas connection string authenticating as the
   `grocery_web_application` database user (never the Atlas-admin user)
+- `MONGODB_DATABASE`: exactly `grocery_web_application`
 - `CUSTOMER_WEB_URL`: the single public marketplace origin
 - `VENDOR_WEB_URL`: optional Vendor Panel origin used in password-reset links;
   defaults to `<CUSTOMER_WEB_URL>/vendor` in production

@@ -5,11 +5,11 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { Role, VendorStatus, type VerificationStatus } from "@prisma/client";
+import { Role, VendorStatus, type VerificationStatus } from "../database/domain.types";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import type { RequestUser } from "../common/request-user";
 import type { DocumentMetadataDto } from "../vendors/vendors.dto";
 import { VendorsService } from "../vendors/vendors.service";
@@ -24,7 +24,7 @@ const ALLOWED_MIME = new Map([
 @Injectable()
 export class VendorDocumentsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly vendors: VendorsService,
     private readonly config: ConfigService,
   ) {}
@@ -65,7 +65,7 @@ export class VendorDocumentsService {
     await mkdir(vendorDirectory, { recursive: true });
     const storageKey = `${vendorId}/${randomUUID()}${expectedExtension}`;
     await writeFile(resolve(root, storageKey), file.buffer, { flag: "wx" });
-    return this.prisma.vendorDocument.upsert({
+    return this.database.vendorDocument.upsert({
       where: { vendorId_type: { vendorId, type: metadata.type } },
       create: {
         vendorId,
@@ -118,11 +118,11 @@ export class VendorDocumentsService {
       );
     if (status === "REJECTED" && !rejectionReason)
       throw new BadRequestException("Rejection reason is required");
-    const document = await this.prisma.vendorDocument.findUnique({
+    const document = await this.database.vendorDocument.findUnique({
       where: { id: documentId },
     });
     if (!document) throw new NotFoundException("Vendor document not found");
-    const updated = await this.prisma.vendorDocument.update({
+    const updated = await this.database.vendorDocument.update({
       where: { id: documentId },
       data: {
         status,
@@ -131,7 +131,7 @@ export class VendorDocumentsService {
         verifiedAt: new Date(),
       },
     });
-    await this.prisma.auditLog.create({
+    await this.database.auditLog.create({
       data: {
         actorId,
         action: `VENDOR_DOCUMENT_${status}`,
@@ -148,7 +148,7 @@ export class VendorDocumentsService {
     user: RequestUser,
     documentId: string,
   ): Promise<{ bytes: Buffer; mimeType: string; name: string }> {
-    const document = await this.prisma.vendorDocument.findUnique({
+    const document = await this.database.vendorDocument.findUnique({
       where: { id: documentId },
       include: { vendor: { select: { userId: true } } },
     });

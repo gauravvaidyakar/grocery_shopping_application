@@ -4,13 +4,14 @@ export function validateEnvironment(input: Environment): Environment {
   const environment = input.NODE_ENV ?? "development";
   const customerWebUrl = input.CUSTOMER_WEB_URL ?? "http://localhost:5173";
   const required = [
-    "DATABASE_URL",
+    "MONGODB_URI",
+    "MONGODB_DATABASE",
     "JWT_ACCESS_SECRET",
     "JWT_REFRESH_SECRET",
     "BANK_DATA_ENCRYPTION_KEY",
     "CORS_ORIGINS",
   ];
-  const missing = required.filter((key) => !input[key]);
+  const missing = required.filter((key: any) => !input[key]);
   if (missing.length > 0)
     throw new Error(`Missing environment variables: ${missing.join(", ")}`);
   if (
@@ -30,23 +31,23 @@ export function validateEnvironment(input: Environment): Environment {
   if (environment === "production" && input.CORS_ORIGINS?.includes("*")) {
     throw new Error("Wildcard CORS is prohibited in production");
   }
-  const databaseUrl = input.DATABASE_URL ?? "";
+  const databaseUrl = input.MONGODB_URI ?? "";
   if (
     !databaseUrl.startsWith("mongodb://") &&
     !databaseUrl.startsWith("mongodb+srv://")
   ) {
-    throw new Error("DATABASE_URL must be a MongoDB connection string");
+    throw new Error("MONGODB_URI must be a MongoDB connection string");
   }
   let parsedDatabaseUrl: URL;
   try {
     parsedDatabaseUrl = new URL(databaseUrl);
   } catch {
-    throw new Error("DATABASE_URL must be a valid MongoDB connection string");
+    throw new Error("MONGODB_URI must be a valid MongoDB connection string");
   }
-  const databaseName = parsedDatabaseUrl.pathname.replace(/^\//, "");
+  const databaseName = input.MONGODB_DATABASE;
   if (databaseName !== "grocery_web_application") {
     throw new Error(
-      "DATABASE_URL must select the grocery_web_application database",
+      "MONGODB_DATABASE must be grocery_web_application",
     );
   }
   if (
@@ -55,7 +56,7 @@ export function validateEnvironment(input: Environment): Environment {
       "grocery_web_application"
   ) {
     throw new Error(
-      "Production DATABASE_URL must use the dedicated grocery_web_application database user",
+      "Production MONGODB_URI must use the dedicated grocery_web_application database user",
     );
   }
   return {

@@ -13,7 +13,7 @@ import {
   InspectionStatus,
   VendorDocumentType,
   VerificationStatus,
-} from "@prisma/client";
+} from "../database/domain.types";
 
 export class UpdateVendorDto {
   @IsOptional() @IsString() @IsNotEmpty() legalName?: string;

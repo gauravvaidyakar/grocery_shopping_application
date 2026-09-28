@@ -1,5 +1,5 @@
 import { IsEnum, IsOptional, IsString, MaxLength } from "class-validator";
-import { VendorSuspensionReason, VerificationStatus } from "@prisma/client";
+import { VendorSuspensionReason, VerificationStatus } from "../database/domain.types";
 
 export class DecisionDto {
   @IsString() @MaxLength(1000) reason!: string;

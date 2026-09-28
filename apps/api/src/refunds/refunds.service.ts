@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { RefundMethod, RefundStatus } from "@prisma/client";
-import { PrismaService } from "../database/prisma.service";
+import { RefundMethod, RefundStatus } from "../database/domain.types";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { RazorpayPaymentProvider } from "../payments/payment-provider";
 import { completeRefundFinancials } from "./refund-engine";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -8,13 +8,13 @@ import { NotificationsService } from "../notifications/notifications.service";
 @Injectable()
 export class RefundsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly provider: RazorpayPaymentProvider,
     private readonly notifications: NotificationsService,
   ) {}
 
   list() {
-    return this.prisma.refund.findMany({
+    return this.database.refund.findMany({
       include: {
         masterOrder: true,
         vendorOrder: true,
@@ -26,7 +26,7 @@ export class RefundsService {
   }
 
   get(id: string) {
-    return this.prisma.refund.findUniqueOrThrow({
+    return this.database.refund.findUniqueOrThrow({
       where: { id },
       include: {
         masterOrder: true,
@@ -38,7 +38,7 @@ export class RefundsService {
   }
 
   async process(id: string) {
-    const refund = await this.prisma.refund.findUniqueOrThrow({
+    const refund = await this.database.refund.findUniqueOrThrow({
       where: { id },
       include: { payment: true },
     });
@@ -48,7 +48,7 @@ export class RefundsService {
       throw new BadRequestException("Refund has no source payment");
     }
     if (refund.method === RefundMethod.BANK_TRANSFER) {
-      const updated = await this.prisma.refund.update({
+      const updated = await this.database.refund.update({
         where: { id },
         data: { status: RefundStatus.PROCESSING },
       });
@@ -66,7 +66,7 @@ export class RefundsService {
     if (providerRefund.amount !== Math.round(refund.amount * 100)) {
       throw new BadRequestException("Provider refund amount mismatch");
     }
-    const pending = await this.prisma.refund.update({
+    const pending = await this.database.refund.update({
       where: { id },
       data: {
         providerReference: providerRefund.id,
@@ -79,7 +79,7 @@ export class RefundsService {
   }
 
   async completeBankTransfer(id: string, providerReference: string) {
-    const refund = await this.prisma.refund.findUniqueOrThrow({
+    const refund = await this.database.refund.findUniqueOrThrow({
       where: { id },
     });
     if (refund.method !== RefundMethod.BANK_TRANSFER) {
@@ -91,8 +91,8 @@ export class RefundsService {
   }
 
   async complete(id: string, providerReference?: string) {
-    const completed = await this.prisma.$transaction(
-      async (tx) => {
+    const completed = await this.database.transaction(
+      async (tx: any) => {
         return completeRefundFinancials(tx, id, providerReference);
       },
       { timeout: 15_000 },

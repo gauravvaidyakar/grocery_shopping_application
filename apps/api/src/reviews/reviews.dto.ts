@@ -1,7 +1,7 @@
 import { Type } from "class-transformer";
 import { ArrayMaxSize, IsArray, IsInt, IsOptional, IsString, IsUrl, IsUUID, Max, MaxLength, Min } from "class-validator";
 import { IsEnum } from "class-validator";
-import { ReviewStatus } from "@prisma/client";
+import { ReviewStatus } from "../database/domain.types";
 export class CreateReviewDto {
   @IsUUID() orderItemId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(5) rating!: number;

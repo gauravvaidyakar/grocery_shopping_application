@@ -6,7 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { MongoDatabaseKnownRequestError } from "../database/domain.types";
 import type { Response } from "express";
 
 interface HttpExceptionLike {
@@ -31,8 +31,8 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const response = host.switchToHttp().getResponse<Response>();
-    const prismaStatus =
-      exception instanceof Prisma.PrismaClientKnownRequestError
+    const databaseStatus =
+      exception instanceof MongoDatabaseKnownRequestError
         ? exception.code === "P2002"
           ? HttpStatus.CONFLICT
           : exception.code === "P2025"
@@ -42,7 +42,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
     const status: number =
       exception instanceof HttpException || isHttpExceptionLike(exception)
         ? exception.getStatus()
-        : (prismaStatus ?? HttpStatus.INTERNAL_SERVER_ERROR);
+        : (databaseStatus ?? HttpStatus.INTERNAL_SERVER_ERROR);
     if (status === Number(HttpStatus.INTERNAL_SERVER_ERROR)) {
       this.logger.error(
         exception instanceof Error ? exception.stack : String(exception),
@@ -58,14 +58,14 @@ export class ApiExceptionFilter implements ExceptionFilter {
         : {};
     const rawMessage =
       objectPayload.message ??
-      (prismaStatus
+      (databaseStatus
         ? "Database constraint rejected the request"
         : exception instanceof Error
           ? exception.message
           : "Unexpected error");
     const message = Array.isArray(rawMessage)
       ? rawMessage
-          .map((item) =>
+          .map((item: any) =>
             typeof item === "string" ? item : "Validation failed",
           )
           .join("; ")

@@ -15,7 +15,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
-import { Role } from "@prisma/client";
+import { Role } from "../database/domain.types";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { Roles } from "../common/roles.decorator";
 import { RolesGuard } from "../common/roles.guard";

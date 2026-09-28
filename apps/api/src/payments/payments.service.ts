@@ -7,11 +7,11 @@ import {
 import {
   OrderStatus,
   PaymentStatus,
-  Prisma,
+  MongoData,
   RefundStatus,
-} from "@prisma/client";
+} from "../database/domain.types";
 import { createHash } from "node:crypto";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { IntegrationSettingsService } from "../integration-settings/integration-settings.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import {
@@ -30,14 +30,14 @@ type WebhookEntity = Record<string, unknown>;
 @Injectable()
 export class PaymentsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly provider: RazorpayPaymentProvider,
     private readonly notifications: NotificationsService,
     private readonly integrationSettings: IntegrationSettingsService,
   ) {}
 
   async create(userId: string, masterOrderId: string) {
-    const order = await this.prisma.masterOrder.findFirst({
+    const order = await this.database.masterOrder.findFirst({
       where: { id: masterOrderId, customer: { userId } },
     });
     if (!order) throw new NotFoundException("Order not found");
@@ -46,7 +46,7 @@ export class PaymentsService {
         "Payment session is only available for prepaid orders",
       );
     }
-    const existing = await this.prisma.payment.findFirst({
+    const existing = await this.database.payment.findFirst({
       where: {
         masterOrderId,
         status: {
@@ -82,7 +82,7 @@ export class PaymentsService {
         "Payment provider returned mismatched order values",
       );
     }
-    const payment = await this.prisma.payment.create({
+    const payment = await this.database.payment.create({
       data: {
         masterOrderId,
         provider: "RAZORPAY",
@@ -104,7 +104,7 @@ export class PaymentsService {
   }
 
   async verify(userId: string, input: VerifyPaymentDto) {
-    const payment = await this.prisma.payment.findFirst({
+    const payment = await this.database.payment.findFirst({
       where: { id: input.paymentId, masterOrder: { customer: { userId } } },
       include: { masterOrder: true },
     });
@@ -135,7 +135,7 @@ export class PaymentsService {
   }
 
   async reconcile(userId: string, id: string) {
-    const payment = await this.prisma.payment.findFirst({
+    const payment = await this.database.payment.findFirst({
       where: { id, masterOrder: { customer: { userId } } },
     });
     if (!payment) throw new NotFoundException("Payment not found");
@@ -152,7 +152,7 @@ export class PaymentsService {
   }
 
   async status(userId: string, id: string) {
-    const payment = await this.prisma.payment.findFirst({
+    const payment = await this.database.payment.findFirst({
       where: { id, masterOrder: { customer: { userId } } },
     });
     if (!payment) throw new NotFoundException("Payment not found");
@@ -176,17 +176,17 @@ export class PaymentsService {
     }
     const eventType = this.stringValue(payload.event, "event");
     const eventId = createHash("sha256").update(rawBody).digest("hex");
-    const existing = await this.prisma.providerEvent.findUnique({
+    const existing = await this.database.providerEvent.findUnique({
       where: { provider_eventId: { provider: "RAZORPAY", eventId } },
     });
     if (existing?.processedAt) return { accepted: true, duplicate: true };
-    await this.prisma.providerEvent.upsert({
+    await this.database.providerEvent.upsert({
       where: { provider_eventId: { provider: "RAZORPAY", eventId } },
       create: {
         provider: "RAZORPAY",
         eventId,
         eventType,
-        payload: payload as Prisma.InputJsonValue,
+        payload: payload as MongoData.InputJsonValue,
       },
       update: {},
     });
@@ -200,13 +200,13 @@ export class PaymentsService {
       } else if (eventType === "refund.failed") {
         await this.handleRefundFailed(payload);
       }
-      await this.prisma.providerEvent.update({
+      await this.database.providerEvent.update({
         where: { provider_eventId: { provider: "RAZORPAY", eventId } },
         data: { processedAt: new Date(), failureReason: null },
       });
       return { accepted: true, duplicate: false };
     } catch (error) {
-      await this.prisma.providerEvent.update({
+      await this.database.providerEvent.update({
         where: { provider_eventId: { provider: "RAZORPAY", eventId } },
         data: {
           failureReason:
@@ -220,8 +220,8 @@ export class PaymentsService {
   }
 
   private async confirmPayment(paymentId: string, providerPaymentId: string) {
-    const updated = await this.prisma.$transaction(
-      async (tx) => {
+    const updated = await this.database.transaction(
+      async (tx: any) => {
         const payment = await tx.payment.findUniqueOrThrow({
           where: { id: paymentId },
         });
@@ -265,7 +265,7 @@ export class PaymentsService {
       entity.order_id,
       "payment.order_id",
     );
-    const payment = await this.prisma.payment.findUnique({
+    const payment = await this.database.payment.findUnique({
       where: { providerOrderId },
     });
     if (!payment) throw new NotFoundException("Webhook payment not found");
@@ -284,11 +284,11 @@ export class PaymentsService {
       entity.order_id,
       "payment.order_id",
     );
-    const payment = await this.prisma.payment.findUnique({
+    const payment = await this.database.payment.findUnique({
       where: { providerOrderId },
     });
     if (!payment || payment.status === PaymentStatus.PAID) return;
-    await this.prisma.$transaction(async (tx) => {
+    await this.database.transaction(async (tx: any) => {
       const items = await tx.orderItem.findMany({
         where: { vendorOrder: { masterOrderId: payment.masterOrderId } },
         include: { product: { include: { inventory: true } } },
@@ -335,11 +335,11 @@ export class PaymentsService {
   private async handleRefundProcessed(payload: WebhookEntity) {
     const entity = this.nestedEntity(payload, "refund");
     const providerReference = this.stringValue(entity.id, "refund.id");
-    const refund = await this.prisma.refund.findUnique({
+    const refund = await this.database.refund.findUnique({
       where: { providerReference },
     });
     if (!refund) return;
-    await this.prisma.$transaction((tx) =>
+    await this.database.transaction((tx: any) =>
       completeRefundFinancials(tx, refund.id, providerReference),
     );
   }
@@ -347,11 +347,11 @@ export class PaymentsService {
   private async handleRefundFailed(payload: WebhookEntity) {
     const entity = this.nestedEntity(payload, "refund");
     const providerReference = this.stringValue(entity.id, "refund.id");
-    const refund = await this.prisma.refund.findUnique({
+    const refund = await this.database.refund.findUnique({
       where: { providerReference },
     });
     if (!refund) return;
-    await this.prisma.refund.update({
+    await this.database.refund.update({
       where: { id: refund.id },
       data: {
         status: RefundStatus.FAILED,

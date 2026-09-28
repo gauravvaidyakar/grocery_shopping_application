@@ -16,7 +16,7 @@ import {
   MaxLength,
   Min,
 } from "class-validator";
-import { ProductStatus, ProductType } from "@prisma/client";
+import { ProductStatus, ProductType } from "../database/domain.types";
 import { PaginationDto } from "../common/pagination.dto";
 
 export class CreateProductDto {

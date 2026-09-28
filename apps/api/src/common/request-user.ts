@@ -1,4 +1,4 @@
-import type { Role } from "@prisma/client";
+import type { Role } from "../database/domain.types";
 
 export interface RequestUser {
   id: string;

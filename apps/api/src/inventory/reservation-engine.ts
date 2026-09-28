@@ -3,11 +3,11 @@ import {
   InventoryTransactionType,
   LedgerDirection,
   LedgerEntryType,
-  Prisma,
-} from "@prisma/client";
+  MongoData,
+} from "../database/domain.types";
 
 export async function reserveInventory(
-  tx: Prisma.TransactionClient,
+  tx: MongoData.TransactionClient,
   inventory: {
     id: string;
     version: number;
@@ -45,7 +45,7 @@ export async function reserveInventory(
 }
 
 export async function finalizeMasterOrder(
-  tx: Prisma.TransactionClient,
+  tx: MongoData.TransactionClient,
   masterOrderId: string,
 ): Promise<void> {
   const vendorOrders = await tx.vendorOrder.findMany({
@@ -159,7 +159,7 @@ export async function finalizeMasterOrder(
       }
     }
     const commissionTotal = vendorOrder.items.reduce(
-      (sum, item) => sum + (item.commission?.amount ?? 0),
+      (sum: any, item: any) => sum + (item.commission?.amount ?? 0),
       0,
     );
     await tx.vendorOrder.update({
@@ -172,7 +172,7 @@ export async function finalizeMasterOrder(
 }
 
 export async function releaseOrderItemInventory(
-  tx: Prisma.TransactionClient,
+  tx: MongoData.TransactionClient,
   item: {
     id: string;
     quantity: number;

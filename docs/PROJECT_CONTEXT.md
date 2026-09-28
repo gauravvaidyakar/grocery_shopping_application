@@ -790,8 +790,8 @@ Backend:
 - Node.js
 - TypeScript
 - NestJS
-- PostgreSQL
-- Prisma
+- MongoDB
+- Mongoose
 - JWT
 
 Architecture style:

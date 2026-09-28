@@ -10,14 +10,14 @@ import {
   VerificationOtpPurpose,
   VendorStatus,
   VendorSuspensionReason,
-} from "@prisma/client";
+} from "../src/database/domain.types";
 import { describe, expect, it, vi } from "vitest";
 import { compare, hash } from "bcryptjs";
 import { AdminService } from "../src/admin/admin.service";
 import { AuthService } from "../src/auth/auth.service";
 import type { CustomerOtpProvider } from "../src/auth/customer-otp-provider";
 import { validateEnvironment } from "../src/config/environment";
-import type { PrismaService } from "../src/database/prisma.service";
+import type { MongoDatabaseService } from "../src/database/mongo-database.service";
 import type { VendorsService } from "../src/vendors/vendors.service";
 import { OrdersService } from "../src/orders/orders.service";
 import type { NotificationsService } from "../src/notifications/notifications.service";
@@ -26,7 +26,7 @@ import { VendorInspectionsService } from "../src/vendor-inspections/vendor-inspe
 describe("platform security rules", () => {
   it("rejects administrator self-registration before database access", async () => {
     const service = new AuthService(
-      {} as PrismaService,
+      {} as MongoDatabaseService,
       {} as JwtService,
       {} as ConfigService,
     );
@@ -41,7 +41,7 @@ describe("platform security rules", () => {
 
   it("requires a six-digit pickup pincode for vendor registration", async () => {
     const service = new AuthService(
-      {} as PrismaService,
+      {} as MongoDatabaseService,
       {} as JwtService,
       {} as ConfigService,
     );
@@ -62,11 +62,11 @@ describe("platform security rules", () => {
   });
 
   it("does not reveal whether a password-reset account exists", async () => {
-    const prisma = {
+    const database = {
       user: { findFirst: vi.fn().mockResolvedValue(null) },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new AuthService(
-      prisma,
+      database,
       { signAsync: vi.fn().mockResolvedValue("opaque-challenge") } as unknown as JwtService,
       {
         get: vi.fn((_key: string, fallback?: unknown) => fallback),
@@ -83,7 +83,7 @@ describe("platform security rules", () => {
   });
 
   it("rejects an expired password-reset token", async () => {
-    const prisma = {
+    const database = {
       passwordResetToken: {
         findUnique: vi.fn().mockResolvedValue({
           userId: "user-id",
@@ -91,9 +91,9 @@ describe("platform security rules", () => {
           expiresAt: new Date(Date.now() - 1_000),
         }),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new AuthService(
-      prisma,
+      database,
       {} as JwtService,
       {} as ConfigService,
     );
@@ -105,7 +105,7 @@ describe("platform security rules", () => {
   it("changes a vendor password securely and revokes refresh/reset sessions", async () => {
     const update = vi.fn().mockResolvedValue({ id: "vendor-user" });
     const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-    const prisma = {
+    const database = {
       user: {
         findUnique: vi.fn().mockResolvedValue({
           id: "vendor-user",
@@ -115,12 +115,10 @@ describe("platform security rules", () => {
         update,
       },
       passwordResetToken: { updateMany },
-      $transaction: vi.fn((operations: Promise<unknown>[]) =>
-        Promise.all(operations),
-      ),
-    } as unknown as PrismaService;
+      transaction: vi.fn((callback: (client: any) => unknown) => callback(database)),
+    } as unknown as MongoDatabaseService;
     const service = new AuthService(
-      prisma,
+      database,
       {} as JwtService,
       {} as ConfigService,
     );
@@ -150,7 +148,7 @@ describe("platform security rules", () => {
 
   it("rejects a vendor password change when the current password is wrong", async () => {
     const update = vi.fn();
-    const prisma = {
+    const database = {
       user: {
         findUnique: vi.fn().mockResolvedValue({
           id: "vendor-user",
@@ -159,9 +157,9 @@ describe("platform security rules", () => {
         }),
         update,
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new AuthService(
-      prisma,
+      database,
       {} as JwtService,
       {} as ConfigService,
     );
@@ -177,7 +175,7 @@ describe("platform security rules", () => {
   });
 
   it("does not allow a non-vendor to use vendor password management", async () => {
-    const prisma = {
+    const database = {
       user: {
         findUnique: vi.fn().mockResolvedValue({
           id: "customer-user",
@@ -185,9 +183,9 @@ describe("platform security rules", () => {
           passwordHash: "unused",
         }),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new AuthService(
-      prisma,
+      database,
       {} as JwtService,
       {} as ConfigService,
     );
@@ -208,7 +206,7 @@ describe("platform security rules", () => {
       verificationOtp: { updateMany: consumed },
       user: { update: verifyUser },
     };
-    const prisma = {
+    const database = {
       verificationOtp: {
         findFirst: vi.fn().mockResolvedValue({
           id: "otp-id",
@@ -217,12 +215,12 @@ describe("platform security rules", () => {
           attempts: 0,
         }),
       },
-      $transaction: vi.fn(
+      transaction: vi.fn(
         (operation: (tx: typeof transactionClient) => Promise<unknown>) =>
           operation(transactionClient),
       ),
-    } as unknown as PrismaService;
-    const service = new AuthService(prisma, {} as JwtService, {} as ConfigService);
+    } as unknown as MongoDatabaseService;
+    const service = new AuthService(database, {} as JwtService, {} as ConfigService);
 
     await expect(service.verifyOtp("user-id", { code: "123456" })).resolves.toEqual({
       message: "Mobile number verified successfully",
@@ -244,7 +242,7 @@ describe("platform security rules", () => {
       },
       user: { update: verifyUser },
     };
-    const prisma = {
+    const database = {
       verificationOtp: {
         findFirst: vi.fn().mockResolvedValue({
           id: "otp-id",
@@ -253,12 +251,12 @@ describe("platform security rules", () => {
           attempts: 0,
         }),
       },
-      $transaction: vi.fn(
+      transaction: vi.fn(
         (operation: (tx: typeof transactionClient) => Promise<unknown>) =>
           operation(transactionClient),
       ),
-    } as unknown as PrismaService;
-    const service = new AuthService(prisma, {} as JwtService, {} as ConfigService);
+    } as unknown as MongoDatabaseService;
+    const service = new AuthService(database, {} as JwtService, {} as ConfigService);
 
     await expect(service.verifyOtp("user-id", { code: "123456" })).rejects.toThrow(
       "invalid or expired",
@@ -278,7 +276,7 @@ describe("platform security rules", () => {
       status: UserStatus.ACTIVE,
     };
     const updateUser = vi.fn().mockResolvedValue(user);
-    const prisma = {
+    const database = {
       user: {
         findUnique: vi.fn().mockResolvedValue(user),
         update: updateUser,
@@ -298,7 +296,7 @@ describe("platform security rules", () => {
           attempts: 0,
         }),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const jwt = {
       verifyAsync: vi.fn().mockResolvedValue({
         sub: user.id,
@@ -316,7 +314,7 @@ describe("platform security rules", () => {
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new BadRequestException("Verification code is invalid or expired"));
     const service = new AuthService(
-      prisma,
+      database,
       jwt,
       config,
       undefined,
@@ -336,7 +334,7 @@ describe("platform security rules", () => {
 
   it("counts an invalid one-time-code attempt without exposing the expected code", async () => {
     const update = vi.fn().mockResolvedValue({});
-    const prisma = {
+    const database = {
       verificationOtp: {
         findFirst: vi.fn().mockResolvedValue({
           id: "otp-id",
@@ -346,8 +344,8 @@ describe("platform security rules", () => {
         }),
         update,
       },
-    } as unknown as PrismaService;
-    const service = new AuthService(prisma, {} as JwtService, {} as ConfigService);
+    } as unknown as MongoDatabaseService;
+    const service = new AuthService(database, {} as JwtService, {} as ConfigService);
 
     await expect(service.verifyOtp("user-id", { code: "654321" })).rejects.toThrow("invalid or expired");
     expect(update).toHaveBeenCalledWith({ where: { id: "otp-id" }, data: { attempts: { increment: 1 } } });
@@ -359,7 +357,7 @@ describe("platform security rules", () => {
     const sendSms = vi.fn().mockResolvedValue({
       status: NotificationStatus.SENT,
     });
-    const prisma = {
+    const database = {
       user: {
         findUnique: vi.fn().mockResolvedValue({
           id: "user-id",
@@ -369,8 +367,8 @@ describe("platform security rules", () => {
         }),
       },
       verificationOtp: { create, deleteMany, findFirst: vi.fn().mockResolvedValue(null) },
-      $transaction: vi.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
-    } as unknown as PrismaService;
+      transaction: vi.fn((callback: (client: any) => unknown) => callback(database)),
+    } as unknown as MongoDatabaseService;
     const config = {
       get: vi.fn((key: string, fallback: string) =>
         key === "NODE_ENV" ? "development" : fallback,
@@ -378,7 +376,7 @@ describe("platform security rules", () => {
     } as unknown as ConfigService;
     const notifications = { sendSms } as unknown as NotificationsService;
     const service = new AuthService(
-      prisma,
+      database,
       {} as JwtService,
       config,
       notifications,
@@ -412,7 +410,7 @@ describe("platform security rules", () => {
       .fn()
       .mockResolvedValueOnce({ count: 0 })
       .mockResolvedValueOnce({ count: 1 });
-    const prisma = {
+    const database = {
       user: {
         findUnique: vi.fn().mockResolvedValue({
           id: "user-id",
@@ -426,8 +424,8 @@ describe("platform security rules", () => {
         deleteMany,
         findFirst: vi.fn().mockResolvedValue(null),
       },
-      $transaction: vi.fn((operations: Promise<unknown>[]) => Promise.all(operations)),
-    } as unknown as PrismaService;
+      transaction: vi.fn((callback: (client: any) => unknown) => callback(database)),
+    } as unknown as MongoDatabaseService;
     const config = {
       get: vi.fn((_key: string, fallback: string) => fallback),
     } as unknown as ConfigService;
@@ -435,7 +433,7 @@ describe("platform security rules", () => {
       sendSms: vi.fn().mockResolvedValue(null),
     } as unknown as NotificationsService;
     const service = new AuthService(
-      prisma,
+      database,
       {} as JwtService,
       config,
       notifications,
@@ -456,7 +454,7 @@ describe("platform security rules", () => {
   it("uses the MSG91 widget rather than WhatsApp for a customer password-reset OTP", async () => {
     const sendSms = vi.fn();
     const sendWhatsApp = vi.fn();
-    const prisma = {
+    const database = {
       user: {
         findFirst: vi.fn().mockResolvedValue({
           id: "customer-user",
@@ -466,7 +464,7 @@ describe("platform security rules", () => {
           status: UserStatus.ACTIVE,
         }),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const jwt = {
       signAsync: vi.fn().mockResolvedValue("password-reset-challenge"),
     } as unknown as JwtService;
@@ -482,7 +480,7 @@ describe("platform security rules", () => {
       identifier: "919876543210",
     });
     const service = new AuthService(
-      prisma,
+      database,
       jwt,
       config,
       notifications,
@@ -502,7 +500,8 @@ describe("platform security rules", () => {
   it("requires independent strong JWT secrets and field encryption", () => {
     expect(() =>
       validateEnvironment({
-        DATABASE_URL: "mongodb://localhost:27017/grocery_web_application",
+        MONGODB_URI: "mongodb://localhost:27017/grocery_web_application",
+        MONGODB_DATABASE: "grocery_web_application",
         JWT_ACCESS_SECRET: "short",
         JWT_REFRESH_SECRET: "short",
         BANK_DATA_ENCRYPTION_KEY: "bad",
@@ -515,7 +514,8 @@ describe("platform security rules", () => {
     expect(() =>
       validateEnvironment({
         NODE_ENV: "production",
-        DATABASE_URL: "mongodb://localhost:27017/grocery_web_application",
+        MONGODB_URI: "mongodb://localhost:27017/grocery_web_application",
+        MONGODB_DATABASE: "grocery_web_application",
         JWT_ACCESS_SECRET: "a".repeat(32),
         JWT_REFRESH_SECRET: "b".repeat(32),
         BANK_DATA_ENCRYPTION_KEY: "c".repeat(64),
@@ -527,7 +527,8 @@ describe("platform security rules", () => {
   it("rejects a PostgreSQL URL for new application development", () => {
     expect(() =>
       validateEnvironment({
-        DATABASE_URL: "postgresql://legacy:secret@localhost/vishwaneed",
+        MONGODB_URI: "postgresql://legacy:secret@localhost/vishwaneed",
+        MONGODB_DATABASE: "grocery_web_application",
         JWT_ACCESS_SECRET: "a".repeat(32),
         JWT_REFRESH_SECRET: "b".repeat(32),
         BANK_DATA_ENCRYPTION_KEY: "c".repeat(64),
@@ -540,8 +541,9 @@ describe("platform security rules", () => {
     expect(() =>
       validateEnvironment({
         NODE_ENV: "production",
-        DATABASE_URL:
+        MONGODB_URI:
           "mongodb+srv://atlas-admin:secret@example.mongodb.net/grocery_web_application",
+        MONGODB_DATABASE: "grocery_web_application",
         JWT_ACCESS_SECRET: "a".repeat(32),
         JWT_REFRESH_SECRET: "b".repeat(32),
         BANK_DATA_ENCRYPTION_KEY: "c".repeat(64),
@@ -554,8 +556,9 @@ describe("platform security rules", () => {
     expect(() =>
       validateEnvironment({
         NODE_ENV: "production",
-        DATABASE_URL:
+        MONGODB_URI:
           "mongodb+srv://grocery_web_application:secret@example.mongodb.net/grocery_web_application",
+        MONGODB_DATABASE: "grocery_web_application",
         JWT_ACCESS_SECRET: "a".repeat(32),
         JWT_REFRESH_SECRET: "b".repeat(32),
         BANK_DATA_ENCRYPTION_KEY: "c".repeat(64),
@@ -567,7 +570,7 @@ describe("platform security rules", () => {
 
 describe("approval gates", () => {
   it("does not approve a product owned by an unapproved vendor", async () => {
-    const prisma = {
+    const database = {
       product: {
         findUnique: vi.fn().mockResolvedValue({
           id: "product",
@@ -575,38 +578,38 @@ describe("approval gates", () => {
           vendor: { status: VendorStatus.PENDING },
         }),
       },
-    } as unknown as PrismaService;
-    const service = new AdminService(prisma, {} as VendorsService);
+    } as unknown as MongoDatabaseService;
+    const service = new AdminService(database, {} as VendorsService);
     await expect(service.approveProduct("product", "admin")).rejects.toThrow(
       "Vendor must be approved",
     );
   });
 
   it("does not reject an already approved vendor", async () => {
-    const prisma = {
+    const database = {
       vendor: {
         findUnique: vi.fn().mockResolvedValue({
           id: "vendor",
           status: VendorStatus.APPROVED,
         }),
       },
-    } as unknown as PrismaService;
-    const service = new AdminService(prisma, {} as VendorsService);
+    } as unknown as MongoDatabaseService;
+    const service = new AdminService(database, {} as VendorsService);
     await expect(
       service.rejectVendor("vendor", "admin", "Invalid transition"),
     ).rejects.toThrow("must be suspended, not rejected");
   });
 
   it("does not suspend a vendor before approval", async () => {
-    const prisma = {
+    const database = {
       vendor: {
         findUnique: vi.fn().mockResolvedValue({
           id: "vendor",
           status: VendorStatus.PENDING,
         }),
       },
-    } as unknown as PrismaService;
-    const service = new AdminService(prisma, {} as VendorsService);
+    } as unknown as MongoDatabaseService;
+    const service = new AdminService(database, {} as VendorsService);
     await expect(
       service.suspendVendor(
         "vendor",
@@ -617,7 +620,7 @@ describe("approval gates", () => {
   });
 
   it("requires every physical inspection check before passing", async () => {
-    const prisma = {
+    const database = {
       vendorInspection: {
         findUnique: vi.fn().mockResolvedValue({
           id: "inspection",
@@ -625,9 +628,9 @@ describe("approval gates", () => {
           status: InspectionStatus.IN_PROGRESS,
         }),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new VendorInspectionsService(
-      prisma,
+      database,
       {} as VendorsService,
     );
     await expect(
@@ -642,7 +645,7 @@ describe("approval gates", () => {
   });
 
   it("requires business activity verification before passing", async () => {
-    const prisma = {
+    const database = {
       vendorInspection: {
         findUnique: vi.fn().mockResolvedValue({
           id: "inspection",
@@ -650,9 +653,9 @@ describe("approval gates", () => {
           status: InspectionStatus.IN_PROGRESS,
         }),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new VendorInspectionsService(
-      prisma,
+      database,
       {} as VendorsService,
     );
     await expect(
@@ -669,7 +672,7 @@ describe("approval gates", () => {
   it("allows an administrator to schedule a verified registered vendor", async () => {
     const create = vi.fn().mockResolvedValue({ id: "inspection" });
     const transition = vi.fn().mockResolvedValue({ status: VendorStatus.INSPECTION });
-    const prisma = {
+    const database = {
       vendor: {
         findUnique: vi.fn().mockResolvedValue({ status: VendorStatus.REGISTERED }),
       },
@@ -677,12 +680,12 @@ describe("approval gates", () => {
         findFirst: vi.fn().mockResolvedValue(null),
         create,
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const vendors = {
       assertKycVerified: vi.fn().mockResolvedValue(undefined),
       transition,
     } as unknown as VendorsService;
-    const service = new VendorInspectionsService(prisma, vendors);
+    const service = new VendorInspectionsService(database, vendors);
     await service.create("vendor", "admin", {
       scheduledAt: "2026-09-21T10:00:00.000Z",
       location: "Vendor premises",
@@ -698,7 +701,7 @@ describe("approval gates", () => {
   });
 
   it("requires a reason when an inspection fails or needs review", async () => {
-    const prisma = {
+    const database = {
       vendorInspection: {
         findUnique: vi.fn().mockResolvedValue({
           id: "inspection",
@@ -706,9 +709,9 @@ describe("approval gates", () => {
           status: InspectionStatus.IN_PROGRESS,
         }),
       },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new VendorInspectionsService(
-      prisma,
+      database,
       {} as VendorsService,
     );
     await expect(
@@ -724,7 +727,7 @@ describe("approval gates", () => {
   it("persists a rescheduled inspection through the existing update flow", async () => {
     const update = vi.fn().mockResolvedValue({ id: "inspection" });
     const auditCreate = vi.fn().mockResolvedValue({ id: "audit" });
-    const prisma = {
+    const database = {
       vendorInspection: {
         findUnique: vi.fn().mockResolvedValue({
           id: "inspection",
@@ -736,9 +739,9 @@ describe("approval gates", () => {
         update,
       },
       auditLog: { create: auditCreate },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const service = new VendorInspectionsService(
-      prisma,
+      database,
       {} as VendorsService,
     );
     await service.update("inspection", "admin", {
@@ -764,14 +767,14 @@ describe("approval gates", () => {
 describe("vendor ownership", () => {
   it("does not return an order belonging to another vendor", async () => {
     const findFirst = vi.fn().mockResolvedValue(null);
-    const prisma = {
+    const database = {
       vendorOrder: { findFirst },
-    } as unknown as PrismaService;
+    } as unknown as MongoDatabaseService;
     const vendors = {
       getVendorId: vi.fn().mockResolvedValue("vendor-a"),
     } as unknown as VendorsService;
     const service = new OrdersService(
-      prisma,
+      database,
       vendors,
       {} as ConfigService,
       {} as NotificationsService,

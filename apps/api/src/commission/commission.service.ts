@@ -1,15 +1,15 @@
 import { BadRequestException, Injectable } from "@nestjs/common";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { VendorsService } from "../vendors/vendors.service";
 import type { CommissionRuleDto } from "./commission.dto";
 @Injectable()
 export class CommissionService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly vendors: VendorsService,
   ) {}
   rules() {
-    return this.prisma.commissionRule.findMany({
+    return this.database.commissionRule.findMany({
       include: { category: true },
       orderBy: { effectiveFrom: "desc" },
     });
@@ -17,7 +17,7 @@ export class CommissionService {
   create(input: CommissionRuleDto) {
     if (!input.categoryId && !input.productType)
       throw new BadRequestException("Category or product type is required");
-    return this.prisma.commissionRule.create({
+    return this.database.commissionRule.create({
       data: {
         categoryId: input.categoryId,
         productType: input.productType,
@@ -31,7 +31,7 @@ export class CommissionService {
     });
   }
   async vendorTransactions(userId: string) {
-    return this.prisma.commissionTransaction.findMany({
+    return this.database.commissionTransaction.findMany({
       where: { vendorId: await this.vendors.getVendorId(userId) },
       include: { orderItem: true, rule: true },
       orderBy: { createdAt: "desc" },

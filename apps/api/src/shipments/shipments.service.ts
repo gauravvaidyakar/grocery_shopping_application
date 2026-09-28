@@ -5,10 +5,10 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { OrderStatus, Prisma, Role, ShipmentStatus } from "@prisma/client";
+import { OrderStatus, MongoData, Role, ShipmentStatus } from "../database/domain.types";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { RequestUser } from "../common/request-user";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { IntegrationSettingsService } from "../integration-settings/integration-settings.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import {
@@ -52,14 +52,14 @@ export class ShippingService {
 @Injectable()
 export class ShipmentsService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly shipping: ShippingService,
     private readonly config: ConfigService,
     private readonly notifications: NotificationsService,
     private readonly integrationSettings: IntegrationSettingsService,
   ) {}
   async tracking(user: RequestUser, id: string) {
-    const shipment = await this.prisma.shipment.findUnique({
+    const shipment = await this.database.shipment.findUnique({
       where: { id },
       include: {
         vendorOrder: {
@@ -83,7 +83,7 @@ export class ShipmentsService {
     return this.presentTracking(shipment);
   }
   async createForVendorOrder(userId: string, vendorOrderId: string) {
-    const order = await this.prisma.vendorOrder.findFirst({
+    const order = await this.database.vendorOrder.findFirst({
       where: { id: vendorOrderId, vendor: { userId } },
       include: {
         vendor: true,
@@ -95,7 +95,7 @@ export class ShipmentsService {
     if (!order) throw new NotFoundException("Vendor order not found");
     if (order.shipment) return order.shipment;
     const address = order.masterOrder
-      .deliveryAddressSnapshot as Prisma.JsonObject;
+      .deliveryAddressSnapshot as MongoData.JsonObject;
     const requiredAddress = (key: string): string => {
       const value = address[key];
       if (typeof value !== "string" || !value)
@@ -117,12 +117,12 @@ export class ShipmentsService {
         pincode: requiredAddress("pincode"),
       },
       weightGrams: order.items.reduce(
-        (sum, item) => sum + item.product.weightGrams * item.quantity,
+        (sum: any, item: any) => sum + item.product.weightGrams * item.quantity,
         0,
       ),
       amountMinor: Math.round(order.orderTotal * 100),
       cod: order.masterOrder.paymentMethod === "COD",
-      items: order.items.map((item) => ({
+      items: order.items.map((item: any) => ({
         name: item.productName,
         sku: item.sku ?? item.productId,
         quantity: item.quantity,
@@ -130,7 +130,7 @@ export class ShipmentsService {
       })),
     };
     const result = await this.shipping.createShipment(input);
-    const shipment = await this.prisma.shipment.create({
+    const shipment = await this.database.shipment.create({
       data: {
         vendorOrderId: order.id,
         provider: result.provider,
@@ -179,16 +179,16 @@ export class ShipmentsService {
       "status",
     ]);
     const eventKey = { provider: "SHIPROCKET", eventId };
-    const existing = await this.prisma.providerEvent.findUnique({
+    const existing = await this.database.providerEvent.findUnique({
       where: { provider_eventId: eventKey },
     });
     if (existing?.processedAt) return { accepted: true, duplicate: true };
-    await this.prisma.providerEvent.upsert({
+    await this.database.providerEvent.upsert({
       where: { provider_eventId: eventKey },
       create: {
         ...eventKey,
         eventType,
-        payload: payload as Prisma.InputJsonValue,
+        payload: payload as MongoData.InputJsonValue,
       },
       update: {},
     });
@@ -207,7 +207,7 @@ export class ShipmentsService {
       if (!providerShipmentId && !awb) {
         throw new BadRequestException("Shipping reference is missing");
       }
-      const shipment = await this.prisma.shipment.findFirst({
+      const shipment = await this.database.shipment.findFirst({
         where: {
           OR: [
             ...(providerShipmentId ? [{ providerShipmentId }] : []),
@@ -221,7 +221,7 @@ export class ShipmentsService {
         ? shipment.statusHistory
         : [];
       const now = new Date();
-      await this.prisma.$transaction(async (tx) => {
+      await this.database.transaction(async (tx: any) => {
         await tx.shipment.update({
           where: { id: shipment.id },
           data: {
@@ -235,7 +235,7 @@ export class ShipmentsService {
                 ...(location ? { location } : {}),
                 occurredAt: now.toISOString(),
               },
-            ] as Prisma.InputJsonValue,
+            ] as MongoData.InputJsonValue,
             ...(status === ShipmentStatus.PICKED_UP ? { shippedAt: now } : {}),
             ...(status === ShipmentStatus.DELIVERED
               ? { deliveredAt: now }
@@ -268,7 +268,7 @@ export class ShipmentsService {
           });
           if (
             vendorOrders.every(
-              (candidate) => candidate.status === OrderStatus.DELIVERED,
+              (candidate: any) => candidate.status === OrderStatus.DELIVERED,
             )
           ) {
             await tx.masterOrder.update({
@@ -290,7 +290,7 @@ export class ShipmentsService {
         .catch(() => undefined);
       return { accepted: true, duplicate: false };
     } catch (error) {
-      await this.prisma.providerEvent.update({
+      await this.database.providerEvent.update({
         where: { provider_eventId: eventKey },
         data: {
           failureReason:
@@ -351,7 +351,7 @@ export class ShipmentsService {
     awb: string | null;
     trackingUrl: string | null;
     status: ShipmentStatus;
-    statusHistory: Prisma.JsonValue;
+    statusHistory: MongoData.JsonValue;
     estimatedDelivery: Date | null;
     updatedAt: Date;
   }) {
@@ -372,7 +372,7 @@ export class ShipmentsService {
       statusLabel: status.replaceAll("_", " "),
       updatedAt: shipment.updatedAt.toISOString(),
       estimatedDelivery: shipment.estimatedDelivery?.toISOString(),
-      events: history.flatMap((event, index) => {
+      events: history.flatMap((event: any, index: any) => {
         if (!event || typeof event !== "object" || Array.isArray(event)) {
           return [];
         }

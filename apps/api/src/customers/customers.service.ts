@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import type { UpdateCustomerDto } from "./customers.dto";
 @Injectable()
 export class CustomersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly database: MongoDatabaseService) {}
   async profile(userId: string) {
-    const profile = await this.prisma.customerProfile.findUnique({
+    const profile = await this.database.customerProfile.findUnique({
       where: { userId },
       include: {
         user: { select: { email: true, mobile: true, mobileVerifiedAt: true, createdAt: true } },
@@ -24,7 +24,7 @@ export class CustomersService {
     };
   }
   async update(userId: string, input: UpdateCustomerDto) {
-    const current = await this.prisma.customerProfile.findUnique({
+    const current = await this.database.customerProfile.findUnique({
       where: { userId },
       include: { user: { select: { mobile: true } } },
     });
@@ -34,24 +34,24 @@ export class CustomersService {
     const mobileChanged =
       input.mobile !== undefined &&
       normalizedMobile(input.mobile) !== normalizedMobile(current.user.mobile);
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.database.transaction(async (tx: any) => {
+      await tx.user.update({
         where: { id: userId },
         data: {
           email: input.email?.toLowerCase(),
           mobile: input.mobile,
           ...(mobileChanged ? { mobileVerifiedAt: null } : {}),
         },
-      }),
-      this.prisma.customerProfile.update({
+      });
+      await tx.customerProfile.update({
         where: { userId },
         data: {
           firstName: names?.[0],
           lastName: names?.slice(1).join(" ") || undefined,
           marketingOptIn: input.marketingOptIn,
         },
-      }),
-    ]);
+      });
+    });
     return this.profile(userId);
   }
 }

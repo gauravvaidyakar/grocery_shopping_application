@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
-import { PrismaService } from "../database/prisma.service";
+import { MongoData } from "../database/domain.types";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import { CategoryImageStorageService } from "./category-image-storage.service";
 import type { CreateCategoryDto, UpdateCategoryDto } from "./categories.dto";
 
@@ -15,16 +15,16 @@ const categoryResponseSelect = {
   sortOrder: true,
   createdAt: true,
   updatedAt: true,
-} satisfies Prisma.CategorySelect;
+} satisfies MongoData.CategorySelect;
 
 @Injectable()
 export class CategoriesService {
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly images: CategoryImageStorageService,
   ) {}
   list() {
-    return this.prisma.category.findMany({
+    return this.database.category.findMany({
       where: { isActive: true },
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: {
@@ -38,13 +38,13 @@ export class CategoriesService {
     });
   }
   adminList() {
-    return this.prisma.category.findMany({
+    return this.database.category.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       select: categoryResponseSelect,
     });
   }
   async get(id: string) {
-    const category = await this.prisma.category.findFirst({
+    const category = await this.database.category.findFirst({
       where: { OR: [{ id }, { slug: id }], isActive: true },
       select: categoryResponseSelect,
     });
@@ -52,14 +52,14 @@ export class CategoriesService {
     return category;
   }
   create(input: CreateCategoryDto) {
-    return this.prisma.category.create({
+    return this.database.category.create({
       data: input,
       select: categoryResponseSelect,
     });
   }
   async update(id: string, input: UpdateCategoryDto) {
     await this.requireAny(id);
-    return this.prisma.category.update({
+    return this.database.category.update({
       where: { id },
       data: input,
       select: categoryResponseSelect,
@@ -69,7 +69,7 @@ export class CategoriesService {
     const category = await this.requireAny(id);
     const optimized = await this.images.optimize(file);
     const imageUrl = this.images.publicUrl(id, optimized.digest);
-    const updated = await this.prisma.category.update({
+    const updated = await this.database.category.update({
       where: { id },
       data: {
         imageUrl,
@@ -83,7 +83,7 @@ export class CategoriesService {
   }
   async removeImage(id: string) {
     const category = await this.requireAny(id);
-    const updated = await this.prisma.category.update({
+    const updated = await this.database.category.update({
       where: { id },
       data: { imageUrl: null, imageData: null, imageMimeType: null },
       select: categoryResponseSelect,
@@ -94,7 +94,7 @@ export class CategoriesService {
   async readImage(filename: string) {
     const categoryId = this.images.categoryIdFromPersistentFilename(filename);
     if (!categoryId) return this.readAndMigrateLegacyImage(filename);
-    const category = await this.prisma.category.findUnique({
+    const category = await this.database.category.findUnique({
       where: { id: categoryId },
       select: { imageUrl: true, imageData: true, imageMimeType: true },
     });
@@ -113,7 +113,7 @@ export class CategoriesService {
   private async readAndMigrateLegacyImage(filename: string) {
     const legacy = await this.images.readLegacy(filename);
     const legacyUrl = `/api/v1/category-images/${filename}`;
-    const category = await this.prisma.category.findFirst({
+    const category = await this.database.category.findFirst({
       where: { imageUrl: legacyUrl },
       select: { id: true },
     });
@@ -122,7 +122,7 @@ export class CategoriesService {
     try {
       const optimized = await this.images.optimizeBytes(legacy.bytes);
       const imageUrl = this.images.publicUrl(category.id, optimized.digest);
-      await this.prisma.category.updateMany({
+      await this.database.category.updateMany({
         where: { id: category.id, imageUrl: legacyUrl },
         data: {
           imageUrl,
@@ -137,7 +137,7 @@ export class CategoriesService {
     }
   }
   private async requireAny(id: string) {
-    const category = await this.prisma.category.findUnique({
+    const category = await this.database.category.findUnique({
       where: { id },
       select: { id: true, imageUrl: true },
     });

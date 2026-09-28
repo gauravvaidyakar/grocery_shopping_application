@@ -197,7 +197,7 @@ export class ShiprocketShippingProvider implements ShippingProvider {
       billing_country: "India",
       billing_phone: input.destination.mobile,
       shipping_is_billing: true,
-      order_items: input.items.map((item) => ({
+      order_items: input.items.map((item: any) => ({
         name: item.name,
         sku: item.sku,
         units: item.quantity,

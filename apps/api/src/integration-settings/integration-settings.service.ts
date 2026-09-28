@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { FieldEncryptionService } from "../common/field-encryption.service";
-import { PrismaService } from "../database/prisma.service";
+import { MongoDatabaseService } from "../database/mongo-database.service";
 import {
   integrationSettingKeys,
   integrationSettingMetadata,
@@ -15,13 +15,13 @@ export class IntegrationSettingsService {
   private readonly logger = new Logger(IntegrationSettingsService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    private readonly database: MongoDatabaseService,
     private readonly config: ConfigService,
     private readonly encryption: FieldEncryptionService,
   ) {}
 
   async get(key: IntegrationSettingKey): Promise<string | undefined> {
-    const stored = await this.prisma.integrationSetting.findUnique({ where: { key } });
+    const stored = await this.database.integrationSetting.findUnique({ where: { key } });
     if (!stored) return this.config.get<string>(key) || undefined;
     try {
       return this.encryption.decrypt(stored.encryptedValue);
@@ -36,12 +36,12 @@ export class IntegrationSettingsService {
   }
 
   async list() {
-    const stored = await this.prisma.integrationSetting.findMany({
+    const stored = await this.database.integrationSetting.findMany({
       where: { key: { in: [...integrationSettingKeys] } },
       select: { key: true, valueHint: true, updatedAt: true },
     });
-    const byKey = new Map(stored.map((value) => [value.key, value]));
-    return integrationSettingKeys.map((key) => {
+    const byKey = new Map<string, any>(stored.map((value: any) => [value.key, value]));
+    return integrationSettingKeys.map((key: IntegrationSettingKey) => {
       const databaseValue = byKey.get(key);
       const environmentValue = this.config.get<string>(key);
       return {
@@ -61,7 +61,7 @@ export class IntegrationSettingsService {
         isIntegrationSettingKey(entry[0]) && typeof entry[1] === "string" && entry[1].trim().length > 0,
     );
     if (!entries.length) return this.list();
-    await this.prisma.$transaction(async (tx) => {
+    await this.database.transaction(async (tx: any) => {
       for (const [key, rawValue] of entries) {
         const value = rawValue.trim();
         const existing = await tx.integrationSetting.findUnique({ where: { key } });
@@ -96,11 +96,11 @@ export class IntegrationSettingsService {
 
   async remove(actorId: string, rawKey: string) {
     if (!isIntegrationSettingKey(rawKey)) throw new NotFoundException("Integration setting not found");
-    const existing = await this.prisma.integrationSetting.findUnique({ where: { key: rawKey } });
+    const existing = await this.database.integrationSetting.findUnique({ where: { key: rawKey } });
     if (existing) {
-      await this.prisma.$transaction([
-        this.prisma.integrationSetting.delete({ where: { key: rawKey } }),
-        this.prisma.auditLog.create({
+      await this.database.transaction(async (tx: any) => {
+        await tx.integrationSetting.delete({ where: { key: rawKey } });
+        await tx.auditLog.create({
           data: {
             actorId,
             action: "INTEGRATION_SETTING_REMOVED",
@@ -109,8 +109,8 @@ export class IntegrationSettingsService {
             previousValue: { configured: true, source: "DATABASE" },
             newValue: { configured: Boolean(this.config.get<string>(rawKey)), source: this.config.get<string>(rawKey) ? "ENVIRONMENT" : "NONE" },
           },
-        }),
-      ]);
+        });
+      });
     }
     return this.list();
   }
