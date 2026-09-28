@@ -30,6 +30,34 @@ export function validateEnvironment(input: Environment): Environment {
   if (environment === "production" && input.CORS_ORIGINS?.includes("*")) {
     throw new Error("Wildcard CORS is prohibited in production");
   }
+  const databaseUrl = input.DATABASE_URL ?? "";
+  if (
+    !databaseUrl.startsWith("mongodb://") &&
+    !databaseUrl.startsWith("mongodb+srv://")
+  ) {
+    throw new Error("DATABASE_URL must be a MongoDB connection string");
+  }
+  let parsedDatabaseUrl: URL;
+  try {
+    parsedDatabaseUrl = new URL(databaseUrl);
+  } catch {
+    throw new Error("DATABASE_URL must be a valid MongoDB connection string");
+  }
+  const databaseName = parsedDatabaseUrl.pathname.replace(/^\//, "");
+  if (databaseName !== "grocery_web_application") {
+    throw new Error(
+      "DATABASE_URL must select the grocery_web_application database",
+    );
+  }
+  if (
+    environment === "production" &&
+    decodeURIComponent(parsedDatabaseUrl.username) !==
+      "grocery_web_application"
+  ) {
+    throw new Error(
+      "Production DATABASE_URL must use the dedicated grocery_web_application database user",
+    );
+  }
   return {
     ...input,
     NODE_ENV: environment,

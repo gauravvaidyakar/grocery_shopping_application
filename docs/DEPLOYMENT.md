@@ -1,5 +1,11 @@
 # Production deployment
 
+> Transition safety: the currently deployed Render API still uses the legacy
+> PostgreSQL database and must not be reconfigured or redeployed from this
+> MongoDB revision without an explicitly approved cutover. Validate this revision
+> on a separate candidate service first. Do not replace the current production
+> `DATABASE_URL`, run PostgreSQL migrations, or import legacy data automatically.
+
 ## Render backend
 
 The repository-root `render.yaml` provisions the NestJS API, applies its Prisma
@@ -12,7 +18,9 @@ in production.
 During initial Blueprint creation, provide:
 
 - `CORS_ORIGINS`: the single public marketplace origin
-- `DATABASE_URL`: the MongoDB Atlas connection string for the dedicated `grocery_web_application` database
+- `DATABASE_URL`: the MongoDB Atlas connection string for the dedicated
+  `grocery_web_application` database, authenticating as the
+  `grocery_web_application` database user (never the Atlas-admin user)
 - `CUSTOMER_WEB_URL`: the single public marketplace origin
 - `VENDOR_WEB_URL`: optional Vendor Panel origin used in password-reset links;
   defaults to `<CUSTOMER_WEB_URL>/vendor` in production

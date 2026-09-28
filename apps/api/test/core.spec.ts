@@ -523,6 +523,46 @@ describe("platform security rules", () => {
       }),
     ).toThrow("Wildcard CORS");
   });
+
+  it("rejects a PostgreSQL URL for new application development", () => {
+    expect(() =>
+      validateEnvironment({
+        DATABASE_URL: "postgresql://legacy:secret@localhost/vishwaneed",
+        JWT_ACCESS_SECRET: "a".repeat(32),
+        JWT_REFRESH_SECRET: "b".repeat(32),
+        BANK_DATA_ENCRYPTION_KEY: "c".repeat(64),
+        CORS_ORIGINS: "http://localhost:5173",
+      }),
+    ).toThrow("must be a MongoDB connection string");
+  });
+
+  it("requires the dedicated MongoDB user in production", () => {
+    expect(() =>
+      validateEnvironment({
+        NODE_ENV: "production",
+        DATABASE_URL:
+          "mongodb+srv://atlas-admin:secret@example.mongodb.net/grocery_web_application",
+        JWT_ACCESS_SECRET: "a".repeat(32),
+        JWT_REFRESH_SECRET: "b".repeat(32),
+        BANK_DATA_ENCRYPTION_KEY: "c".repeat(64),
+        CORS_ORIGINS: "https://example.com",
+      }),
+    ).toThrow("must use the dedicated grocery_web_application database user");
+  });
+
+  it("accepts the dedicated MongoDB database and user in production", () => {
+    expect(() =>
+      validateEnvironment({
+        NODE_ENV: "production",
+        DATABASE_URL:
+          "mongodb+srv://grocery_web_application:secret@example.mongodb.net/grocery_web_application",
+        JWT_ACCESS_SECRET: "a".repeat(32),
+        JWT_REFRESH_SECRET: "b".repeat(32),
+        BANK_DATA_ENCRYPTION_KEY: "c".repeat(64),
+        CORS_ORIGINS: "https://example.com",
+      }),
+    ).not.toThrow();
+  });
 });
 
 describe("approval gates", () => {
