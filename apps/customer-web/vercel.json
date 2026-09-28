@@ -71,23 +71,23 @@
   "rewrites": [
     {
       "source": "/admin",
-      "destination": "https://vishwaneed-marketplace-admin-panel.vercel.app/admin"
+      "destination": "https://grocerywebapplication-admin.vercel.app/admin"
     },
     {
       "source": "/admin/:path*",
-      "destination": "https://vishwaneed-marketplace-admin-panel.vercel.app/admin/:path*"
+      "destination": "https://grocerywebapplication-admin.vercel.app/admin/:path*"
     },
     {
       "source": "/vendor",
-      "destination": "https://vishwaneed-marketplace-vendor-panel.vercel.app/vendor"
+      "destination": "https://grocerywebapplication-vendor.vercel.app/vendor"
     },
     {
       "source": "/vendor/:path*",
-      "destination": "https://vishwaneed-marketplace-vendor-panel.vercel.app/vendor/:path*"
+      "destination": "https://grocerywebapplication-vendor.vercel.app/vendor/:path*"
     },
     {
       "source": "/api/:path*",
-      "destination": "https://vishwaneed-api.onrender.com/api/:path*"
+      "destination": "https://grocery-web-application-api.onrender.com/api/:path*"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
