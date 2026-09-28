@@ -12,7 +12,8 @@
     "test:watch": "vitest",
     "mongodb:setup": "tsx scripts/setup-mongodb.ts",
     "mongodb:seed": "tsx scripts/seed-mongodb.ts",
-    "test:mongodb": "vitest run test/mongodb.integration.spec.ts"
+    "test:mongodb": "vitest run test/mongodb.integration.spec.ts",
+    "test:api-mongodb": "npm run build && tsx scripts/smoke-mongodb-api.ts"
   },
   "dependencies": {
     "@nestjs/common": "12.0.3",
